@@ -24,15 +24,15 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Initialize Go module with `go mod init` and create go.mod at repository root
-- [ ] T002 Create project directory structure per plan.md (cmd/, internal/, pkg/, migrations/, tests/)
-- [ ] T003 [P] Create Makefile with targets: dev, run-api, run-worker, migrate-up, migrate-down, seed, generate, sqlc, openapi, test, test-unit, test-integration, fmt, lint, build
-- [ ] T004 [P] Create docker-compose.yml with PostgreSQL 15, Redis 7, MinIO services
-- [ ] T005 [P] Create .env.example with all required environment variables
-- [ ] T006 [P] Create .air.toml for hot reload configuration
-- [ ] T007 [P] Create .golangci.yml for linter configuration
-- [ ] T008 [P] Create Dockerfile for production build (multi-stage)
-- [ ] T009 Add primary dependencies to go.mod: chi, pgx, sqlc, asynq, go-redis, oapi-codegen, testify
+- [x] T001 Initialize Go module with `go mod init` and create go.mod at repository root
+- [x] T002 Create project directory structure per plan.md (cmd/, internal/, pkg/, migrations/, tests/)
+- [x] T003 [P] Create Makefile with targets: dev, run-api, run-worker, migrate-up, migrate-down, seed, generate, sqlc, openapi, test, test-unit, test-integration, fmt, lint, build
+- [x] T004 [P] Create docker-compose.yml with PostgreSQL 15, Redis 7, MinIO services
+- [x] T005 [P] Create .env.example with all required environment variables
+- [x] T006 [P] Create .air.toml for hot reload configuration
+- [x] T007 [P] Create .golangci.yml for linter configuration
+- [x] T008 [P] Create Dockerfile for production build (multi-stage)
+- [x] T009 Add primary dependencies to go.mod: chi, pgx, sqlc, asynq, go-redis, oapi-codegen, testify
 
 ---
 
@@ -44,34 +44,34 @@
 
 ### Database Schema & Migrations
 
-- [ ] T010 Create migrations/000001_initial_schema.up.sql with organizations, members, roles, sessions tables
-- [ ] T011 Create migrations/000001_initial_schema.down.sql with rollback for initial schema
-- [ ] T012 Create migrations/000002_api_keys.up.sql with api_keys table and indexes
-- [ ] T013 Create migrations/000002_api_keys.down.sql with rollback
-- [ ] T014 Create migrations/000003_reference_data.up.sql with ref_cities, ref_districts, ref_neighborhoods, ref_postal_codes tables
-- [ ] T015 Create migrations/000003_reference_data.down.sql with rollback
-- [ ] T016 Create migrations/000004_addresses.up.sql with addresses table and RLS policies
-- [ ] T017 Create migrations/000004_addresses.down.sql with rollback
-- [ ] T018 Create migrations/000005_providers.up.sql with providers, provider_services, provider_accounts, marketplace_rate_plans tables
-- [ ] T019 Create migrations/000005_providers.down.sql with rollback
-- [ ] T020 Create migrations/000006_quotes.up.sql with quotes, offers tables
-- [ ] T021 Create migrations/000006_quotes.down.sql with rollback
-- [ ] T022 Create migrations/000007_shipments.up.sql with shipments, tracking_events, documents tables
-- [ ] T023 Create migrations/000007_shipments.down.sql with rollback
-- [ ] T024 Create migrations/000008_webhooks.up.sql with webhook_endpoints, webhook_subscriptions, webhook_events, webhook_deliveries tables
-- [ ] T025 Create migrations/000008_webhooks.down.sql with rollback
-- [ ] T026 Create migrations/000009_billing.up.sql with ledger_entries, topups, refunds, cod_settlements tables
-- [ ] T027 Create migrations/000009_billing.down.sql with rollback
-- [ ] T028 Create migrations/000010_infrastructure.up.sql with idempotency_records, audit_logs, provider_api_logs, outbox tables
-- [ ] T029 Create migrations/000010_infrastructure.down.sql with rollback
-- [ ] T030 Create migrations/000011_triggers.up.sql with updated_at, ledger_immutability, audit_log triggers
-- [ ] T031 Create migrations/000011_triggers.down.sql with rollback
-- [ ] T032 Create migrations/000012_views.up.sql with v_wallet_balances, v_provider_health views
-- [ ] T033 Create migrations/000012_views.down.sql with rollback
-- [ ] T034 Create migrations/000013_seed_providers.up.sql with provider seed data (aras, yurtici, surat, ptt, hepsijet, mng, kolaygelsin, sendeo, pakettaxi)
-- [ ] T035 Create migrations/000013_seed_providers.down.sql with rollback
-- [ ] T036 Create migrations/000014_seed_roles.up.sql with system roles (owner, admin, operator, viewer)
-- [ ] T037 Create migrations/000014_seed_roles.down.sql with rollback
+- [x] T010 Create migrations/000001_initial_schema.up.sql with organizations, members, roles, sessions tables
+- [x] T011 Create migrations/000001_initial_schema.down.sql with rollback for initial schema
+- [x] T012 Create migrations/000002_api_keys.up.sql with api_keys table and indexes
+- [x] T013 Create migrations/000002_api_keys.down.sql with rollback
+- [x] T014 Create migrations/000003_reference_data.up.sql with ref_cities, ref_districts, ref_neighborhoods, ref_postal_codes tables
+- [x] T015 Create migrations/000003_reference_data.down.sql with rollback
+- [x] T016 Create migrations/000004_addresses.up.sql with addresses table and RLS policies
+- [x] T017 Create migrations/000004_addresses.down.sql with rollback
+- [x] T018 Create migrations/000005_providers.up.sql with providers, provider_services, provider_accounts, marketplace_rate_plans tables
+- [x] T019 Create migrations/000005_providers.down.sql with rollback
+- [x] T020 Create migrations/000006_quotes.up.sql with quotes, offers tables
+- [x] T021 Create migrations/000006_quotes.down.sql with rollback
+- [x] T022 Create migrations/000007_shipments.up.sql with shipments, tracking_events, documents tables
+- [x] T023 Create migrations/000007_shipments.down.sql with rollback
+- [x] T024 Create migrations/000008_webhooks.up.sql with webhook_endpoints, webhook_subscriptions, webhook_events, webhook_deliveries tables
+- [x] T025 Create migrations/000008_webhooks.down.sql with rollback
+- [x] T026 Create migrations/000009_billing.up.sql with ledger_entries, topups, refunds, cod_settlements tables
+- [x] T027 Create migrations/000009_billing.down.sql with rollback
+- [x] T028 Create migrations/000010_infrastructure.up.sql with idempotency_records, audit_logs, provider_api_logs, outbox tables
+- [x] T029 Create migrations/000010_infrastructure.down.sql with rollback
+- [x] T030 Create migrations/000011_triggers.up.sql with updated_at, ledger_immutability, audit_log triggers
+- [x] T031 Create migrations/000011_triggers.down.sql with rollback
+- [x] T032 Create migrations/000012_views.up.sql with v_wallet_balances, v_provider_health views
+- [x] T033 Create migrations/000012_views.down.sql with rollback
+- [x] T034 Create migrations/000013_seed_providers.up.sql with provider seed data (aras, yurtici, surat, ptt, hepsijet, mng, kolaygelsin, sendeo, pakettaxi)
+- [x] T035 Create migrations/000013_seed_providers.down.sql with rollback
+- [x] T036 Create migrations/000014_seed_roles.up.sql with system roles (owner, admin, operator, viewer)
+- [x] T037 Create migrations/000014_seed_roles.down.sql with rollback
 
 ### Configuration & Utilities
 
