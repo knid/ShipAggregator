@@ -136,8 +136,8 @@
 
 ### Redis Layer
 
-- [ ] T084 Implement internal/repository/redis/cache.go with generic cache operations
-- [ ] T085 Implement internal/repository/redis/ratelimit.go with sliding window rate limiter
+- [x] T084 Implement internal/repository/redis/cache.go with generic cache operations
+- [x] T085 Implement internal/repository/redis/ratelimit.go with sliding window rate limiter
 
 ### HTTP Infrastructure
 
