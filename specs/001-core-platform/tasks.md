@@ -181,16 +181,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T104 [P] [US1] Implement internal/service/auth/apikey.go with API key validation and scope checking
-- [ ] T105 [P] [US1] Implement internal/service/auth/session.go with session management
-- [ ] T106 [US1] Implement internal/api/handler/auth.go with POST /auth/login, POST /auth/logout, GET /auth/me endpoints
-- [ ] T107 [US1] Implement internal/service/organization/service.go with organization CRUD operations
-- [ ] T108 [US1] Implement internal/api/handler/organization.go with GET/PATCH /orgs/current, member management endpoints
-- [ ] T109 [US1] Implement internal/api/handler/reference.go with GET /ref/cities, /ref/districts, /ref/neighborhoods, /ref/postal-codes endpoints
-- [ ] T110 [US1] Implement internal/api/handler/address.go with CRUD endpoints for /addresses
-- [ ] T111 [US1] Implement internal/api/handler/provider.go with GET /providers, GET /providers/{code}, GET /providers/{code}/services endpoints
-- [ ] T112 [US1] Implement internal/service/quote/service.go with quote creation, offer generation, and expiry handling
-- [ ] T113 [US1] Implement internal/api/handler/quote.go with POST /quotes, GET /quotes/{id}, GET /quotes/{id}/offers, POST /quotes/{id}/refresh endpoints
+- [x] T104 [P] [US1] Implement internal/service/auth/apikey.go with API key validation and scope checking
+- [x] T105 [P] [US1] Implement internal/service/auth/session.go with session management
+- [x] T106 [US1] Implement internal/api/handler/auth.go with POST /auth/login, POST /auth/logout, GET /auth/me endpoints
+- [x] T107 [US1] Implement internal/service/organization/service.go with organization CRUD operations
+- [x] T108 [US1] Implement internal/api/handler/organization.go with GET/PATCH /orgs/current, member management endpoints
+- [x] T109 [US1] Implement internal/api/handler/reference.go with GET /ref/cities, /ref/districts, /ref/neighborhoods, /ref/postal-codes endpoints
+- [x] T110 [US1] Implement internal/api/handler/address.go with CRUD endpoints for /addresses
+- [x] T111 [US1] Implement internal/api/handler/provider.go with GET /providers, GET /providers/{code}, GET /providers/{code}/services endpoints
+- [x] T112 [US1] Implement internal/service/quote/service.go with quote creation, offer generation, and expiry handling
+- [x] T113 [US1] Implement internal/api/handler/quote.go with POST /quotes, GET /quotes/{id}, GET /quotes/{id}/offers, POST /quotes/{id}/refresh endpoints
 - [ ] T114 [US1] Implement internal/service/billing/wallet.go with balance calculation from ledger
 - [ ] T115 [US1] Implement internal/service/billing/ledger.go with debit/credit operations and invariant checks
 - [ ] T116 [US1] Implement internal/service/shipment/service.go with CreateFromOffer, PurchaseLabel, Get, List operations
