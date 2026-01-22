@@ -280,13 +280,13 @@
 
 ### Implementation for User Story 5
 
-- [ ] T151 [P] [US5] Implement internal/service/tracking/service.go with tracking event processing and normalization
-- [ ] T152 [P] [US5] Implement internal/service/webhook/publisher.go with outbox-based event publishing
-- [ ] T153 [US5] Implement internal/service/webhook/delivery.go with webhook delivery logic and signing
-- [ ] T154 [US5] Implement internal/api/handler/webhook.go with CRUD endpoints for /webhooks/endpoints
-- [ ] T155 [US5] Implement internal/api/handler/webhook.go with CRUD endpoints for /webhooks/subscriptions
-- [ ] T156 [US5] Implement internal/api/handler/webhook.go with GET /webhooks/deliveries, POST /webhooks/deliveries/{id}/replay endpoints
-- [ ] T157 [US5] Implement internal/api/handler/webhook.go POST /webhooks/endpoints/{id}/test endpoint
+- [X] T151 [P] [US5] Implement internal/service/tracking/service.go with tracking event processing and normalization
+- [X] T152 [P] [US5] Implement internal/service/webhook/publisher.go with outbox-based event publishing
+- [X] T153 [US5] Implement internal/service/webhook/delivery.go with webhook delivery logic and signing
+- [X] T154 [US5] Implement internal/api/handler/webhook.go with CRUD endpoints for /webhooks/endpoints
+- [X] T155 [US5] Implement internal/api/handler/webhook.go with CRUD endpoints for /webhooks/subscriptions
+- [X] T156 [US5] Implement internal/api/handler/webhook.go with GET /webhooks/deliveries, POST /webhooks/deliveries/{id}/replay endpoints
+- [X] T157 [US5] Implement internal/api/handler/webhook.go POST /webhooks/endpoints/{id}/test endpoint
 - [ ] T158 [US5] Implement internal/api/integration/aras.go with Aras tracking webhook handler
 - [ ] T159 [US5] Implement internal/api/integration/yurtici.go with Yurtiçi tracking webhook handler
 - [ ] T160 [US5] Implement internal/api/integration/hepsijet.go with Hepsijet tracking webhook handler
