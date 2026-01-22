@@ -17,6 +17,8 @@ var (
 	ErrAlreadyExists = errors.New("resource already exists")
 	// ErrInvalidInput indicates invalid input was provided.
 	ErrInvalidInput = errors.New("invalid input")
+	// ErrValidation indicates a validation error.
+	ErrValidation = errors.New("validation error")
 	// ErrUnauthorized indicates the request is not authorized.
 	ErrUnauthorized = errors.New("unauthorized")
 	// ErrForbidden indicates the request is forbidden.
@@ -127,6 +129,10 @@ var (
 	ErrProviderUnsupportedFeature = errors.New("provider does not support this feature")
 	// ErrProviderAPIError indicates an error from the provider API.
 	ErrProviderAPIError = errors.New("provider API error")
+	// ErrProviderError indicates a general provider error.
+	ErrProviderError = errors.New("provider error")
+	// ErrProviderUnavailable indicates the provider is unavailable.
+	ErrProviderUnavailable = errors.New("provider is unavailable")
 	// ErrProviderTimeout indicates a timeout from the provider.
 	ErrProviderTimeout = errors.New("provider timeout")
 )
@@ -173,6 +179,10 @@ var (
 	ErrShipmentAlreadyPurchased = errors.New("shipment label already purchased")
 	// ErrShipmentCannotBeCancelled indicates the shipment cannot be cancelled.
 	ErrShipmentCannotBeCancelled = errors.New("shipment cannot be cancelled")
+	// ErrShipmentNotCancellable indicates the shipment cannot be cancelled in its current state.
+	ErrShipmentNotCancellable = errors.New("shipment cannot be cancelled in its current state")
+	// ErrShipmentAlreadyCancelled indicates the shipment has already been cancelled.
+	ErrShipmentAlreadyCancelled = errors.New("shipment has already been cancelled")
 	// ErrShipmentCannotSchedulePickup indicates pickup cannot be scheduled.
 	ErrShipmentCannotSchedulePickup = errors.New("cannot schedule pickup for this shipment")
 	// ErrShipmentCannotCreateReturn indicates a return cannot be created.
@@ -197,6 +207,8 @@ var (
 
 // Webhook errors
 var (
+	// ErrWebhookNotFound indicates the webhook was not found.
+	ErrWebhookNotFound = errors.New("webhook not found")
 	// ErrWebhookEndpointNotFound indicates the webhook endpoint was not found.
 	ErrWebhookEndpointNotFound = errors.New("webhook endpoint not found")
 	// ErrWebhookSubscriptionNotFound indicates the webhook subscription was not found.

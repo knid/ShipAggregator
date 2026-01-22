@@ -141,14 +141,14 @@
 
 ### HTTP Infrastructure
 
-- [ ] T086 Implement internal/api/middleware/trace.go with trace_id and request_id propagation
-- [ ] T087 Implement internal/api/middleware/auth.go with API key and session authentication
-- [ ] T088 Implement internal/api/middleware/tenant.go with organization context injection and RLS setup
-- [ ] T089 Implement internal/api/middleware/ratelimit.go with per-key rate limiting
-- [ ] T090 Implement internal/api/middleware/idempotency.go with idempotency key handling
-- [ ] T091 Implement internal/api/router.go with chi router setup and middleware chain
-- [ ] T092 Implement internal/api/handler/health.go with /health/live and /health/ready endpoints
-- [ ] T093 Implement internal/api/handler/errors.go with RFC 7807 Problem Details error responses
+- [x] T086 Implement internal/api/middleware/trace.go with trace_id and request_id propagation
+- [x] T087 Implement internal/api/middleware/auth.go with API key and session authentication
+- [x] T088 Implement internal/api/middleware/tenant.go with organization context injection and RLS setup
+- [x] T089 Implement internal/api/middleware/ratelimit.go with per-key rate limiting
+- [x] T090 Implement internal/api/middleware/idempotency.go with idempotency key handling
+- [x] T091 Implement internal/api/router.go with chi router setup and middleware chain
+- [x] T092 Implement internal/api/handler/health.go with /health/live and /health/ready endpoints
+- [x] T093 Implement internal/api/handler/errors.go with RFC 7807 Problem Details error responses
 
 ### Provider Framework
 
