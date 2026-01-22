@@ -75,10 +75,10 @@
 
 ### Configuration & Utilities
 
-- [ ] T038 Implement internal/config/config.go with environment variable loading and validation
-- [ ] T039 [P] Implement pkg/money/money.go with integer kuruş type and arithmetic operations
-- [ ] T040 [P] Implement pkg/phone/phone.go with E.164 Turkish phone validation
-- [ ] T041 [P] Implement pkg/address/turkish.go with Turkish address validation utilities
+- [x] T038 Implement internal/config/config.go with environment variable loading and validation
+- [x] T039 [P] Implement pkg/money/money.go with integer kuruş type and arithmetic operations
+- [x] T040 [P] Implement pkg/phone/phone.go with E.164 Turkish phone validation
+- [x] T041 [P] Implement pkg/address/turkish.go with Turkish address validation utilities
 
 ### Database Layer
 
