@@ -152,16 +152,16 @@
 
 ### Provider Framework
 
-- [ ] T094 Implement internal/provider/adapter.go with ProviderAdapter interface definition
-- [ ] T095 Implement internal/provider/factory.go with adapter factory and registration
-- [ ] T096 Implement internal/provider/soap/client.go with SOAP client utilities
-- [ ] T097 Implement internal/provider/soap/xml.go with XML parsing utilities
-- [ ] T098 Implement internal/provider/rest/client.go with REST client with circuit breaker and retry
+- [x] T094 Implement internal/provider/adapter.go with ProviderAdapter interface definition
+- [x] T095 Implement internal/provider/factory.go with adapter factory and registration
+- [x] T096 Implement internal/provider/soap/client.go with SOAP client utilities
+- [x] T097 Implement internal/provider/soap/xml.go with XML parsing utilities
+- [x] T098 Implement internal/provider/rest/client.go with REST client with circuit breaker and retry
 
 ### Worker Infrastructure
 
-- [ ] T099 Implement internal/worker/scheduler.go with Asynq scheduler setup
-- [ ] T100 Implement internal/worker/tasks/types.go with task type constants
+- [x] T099 Implement internal/worker/scheduler.go with Asynq scheduler setup
+- [x] T100 Implement internal/worker/tasks/types.go with task type constants
 
 ### Entry Points
 
