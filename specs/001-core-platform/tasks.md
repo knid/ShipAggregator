@@ -130,9 +130,9 @@
 
 ### Observability
 
-- [ ] T081 Implement internal/observability/logger.go with structured slog logger and PII masking
-- [ ] T082 Implement internal/observability/metrics.go with Prometheus metrics (http_requests_total, http_request_duration, provider_api_latency)
-- [ ] T083 Implement internal/observability/tracer.go with OpenTelemetry tracer setup
+- [x] T081 Implement internal/observability/logger.go with structured slog logger and PII masking
+- [x] T082 Implement internal/observability/metrics.go with Prometheus metrics (http_requests_total, http_request_duration, provider_api_latency)
+- [x] T083 Implement internal/observability/tracer.go with OpenTelemetry tracer setup
 
 ### Redis Layer
 
