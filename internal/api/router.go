@@ -11,8 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/e-port/shipping-aggregator/internal/api/handler"
+	"github.com/e-port/shipping-aggregator/internal/api/integration"
 	"github.com/e-port/shipping-aggregator/internal/api/middleware"
 	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/e-port/shipping-aggregator/internal/payment/iyzico"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/repository/redis"
 	"github.com/e-port/shipping-aggregator/internal/service/billing"
@@ -57,6 +59,12 @@ type RouterConfig struct {
 	LedgerService *billing.LedgerService
 	// CODService is the COD settlement service (US3: COD).
 	CODService *billing.CODService
+	// TopupService is the topup service (US4: Wallet Top-Up).
+	TopupService *billing.TopupService
+	// IyzicoClient is the Iyzico payment client (US4: Wallet Top-Up).
+	IyzicoClient *iyzico.Client
+	// IyzicoReturnURL is the return URL for Iyzico callbacks (US4: Wallet Top-Up).
+	IyzicoReturnURL string
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -156,7 +164,15 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		)
 	}
 	if cfg.WalletService != nil && cfg.LedgerService != nil {
-		if cfg.CODService != nil {
+		if cfg.TopupService != nil {
+			billingHandler = handler.NewBillingHandlerFull(
+				cfg.WalletService,
+				cfg.LedgerService,
+				cfg.CODService,
+				cfg.TopupService,
+				cfg.Logger,
+			)
+		} else if cfg.CODService != nil {
 			billingHandler = handler.NewBillingHandlerWithCOD(
 				cfg.WalletService,
 				cfg.LedgerService,
@@ -170,6 +186,17 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				cfg.Logger,
 			)
 		}
+	}
+
+	// Initialize Iyzico integration handler (US4: Wallet Top-Up)
+	var iyzicoHandler *integration.IyzicoHandler
+	if cfg.TopupService != nil && cfg.IyzicoClient != nil {
+		iyzicoHandler = integration.NewIyzicoHandler(
+			cfg.TopupService,
+			cfg.IyzicoClient,
+			cfg.Logger,
+			cfg.IyzicoReturnURL,
+		)
 	}
 
 	// API v1 routes
@@ -295,7 +322,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Post("/api-keys", organizationHandler.CreateAPIKey)
 		})
 
-		// Billing routes (US3: COD Settlements)
+		// Billing routes (US3: COD Settlements, US4: Wallet Top-Up)
 		r.Route("/billing", func(r chi.Router) {
 			r.Use(middleware.RequireScope("billing:read"))
 			if billingHandler != nil {
@@ -314,6 +341,15 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					// Admin-only reconciliation endpoints
 					r.With(middleware.RequireScope("billing:admin")).Post("/reconcile", billingHandler.ReconcileCODSettlements)
 					r.With(middleware.RequireScope("billing:admin")).Post("/{id}/collected", billingHandler.MarkCODSettlementCollected)
+				})
+
+				// Topup routes (US4: Wallet Top-Up via Iyzico)
+				r.Route("/topups", func(r chi.Router) {
+					r.Get("/", billingHandler.ListTopups)
+					r.With(middleware.RequireScope("billing:write")).Post("/", billingHandler.CreateTopup)
+					r.Get("/{id}", billingHandler.GetTopup)
+					r.With(middleware.RequireScope("billing:write")).Post("/{id}/confirm", billingHandler.ConfirmTopup)
+					r.With(middleware.RequireScope("billing:write")).Post("/{id}/cancel", billingHandler.CancelTopup)
 				})
 			}
 		})
@@ -360,6 +396,19 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		// These endpoints receive webhooks from providers
 		// They have their own authentication (signature verification)
 		// r.Post("/tracking/{provider}", webhookReceiverHandler.ReceiveTracking)
+	})
+
+	// Integration endpoints (for external service callbacks)
+	r.Route("/integrations", func(r chi.Router) {
+		// Iyzico payment integration (US4: Wallet Top-Up)
+		r.Route("/iyzico", func(r chi.Router) {
+			if iyzicoHandler != nil {
+				// Callback endpoint - called when user completes payment on Iyzico
+				r.Post("/callback", iyzicoHandler.HandleCallback)
+				// Webhook endpoint - called by Iyzico for async notifications
+				r.Post("/webhook", iyzicoHandler.HandleWebhook)
+			}
+		})
 	})
 
 	// Not found handler

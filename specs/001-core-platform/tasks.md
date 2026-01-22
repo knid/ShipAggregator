@@ -259,14 +259,14 @@
 
 ### Implementation for User Story 4
 
-- [ ] T143 [P] [US4] Implement internal/payment/iyzico/client.go with Iyzico API client
-- [ ] T144 [P] [US4] Implement internal/payment/iyzico/types.go with Iyzico request/response types
-- [ ] T145 [US4] Implement internal/service/billing/topup.go with top-up initiation and confirmation
-- [ ] T146 [US4] Implement internal/api/handler/billing.go POST /billing/topups endpoint
-- [ ] T147 [US4] Implement internal/api/handler/billing.go POST /billing/topups/{id}/confirm endpoint
-- [ ] T148 [US4] Implement internal/api/handler/billing.go GET /billing/topups endpoint
-- [ ] T149 [US4] Implement internal/api/integration/iyzico.go with Iyzico webhook handler
-- [ ] T150 [US4] Register routes for US4 endpoints in internal/api/router.go
+- [X] T143 [P] [US4] Implement internal/payment/iyzico/client.go with Iyzico API client
+- [X] T144 [P] [US4] Implement internal/payment/iyzico/types.go with Iyzico request/response types
+- [X] T145 [US4] Implement internal/service/billing/topup.go with top-up initiation and confirmation
+- [X] T146 [US4] Implement internal/api/handler/billing.go POST /billing/topups endpoint
+- [X] T147 [US4] Implement internal/api/handler/billing.go POST /billing/topups/{id}/confirm endpoint
+- [X] T148 [US4] Implement internal/api/handler/billing.go GET /billing/topups endpoint
+- [X] T149 [US4] Implement internal/api/integration/iyzico.go with Iyzico webhook handler
+- [X] T150 [US4] Register routes for US4 endpoints in internal/api/router.go
 
 **Checkpoint**: Wallet top-up via Iyzico functional
 

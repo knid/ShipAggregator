@@ -22,6 +22,7 @@ type BillingHandler struct {
 	walletService *billing.WalletService
 	ledgerService *billing.LedgerService
 	codService    *billing.CODService
+	topupService  *billing.TopupService
 	logger        *observability.Logger
 }
 
@@ -40,6 +41,23 @@ func NewBillingHandlerWithCOD(walletService *billing.WalletService, ledgerServic
 		walletService: walletService,
 		ledgerService: ledgerService,
 		codService:    codService,
+		logger:        logger,
+	}
+}
+
+// NewBillingHandlerFull creates a new billing handler with all services.
+func NewBillingHandlerFull(
+	walletService *billing.WalletService,
+	ledgerService *billing.LedgerService,
+	codService *billing.CODService,
+	topupService *billing.TopupService,
+	logger *observability.Logger,
+) *BillingHandler {
+	return &BillingHandler{
+		walletService: walletService,
+		ledgerService: ledgerService,
+		codService:    codService,
+		topupService:  topupService,
 		logger:        logger,
 	}
 }
@@ -820,6 +838,383 @@ func codSettlementToResponse(settlement *billing.CODSettlement) CODSettlementRes
 	if settlement.SettledAt != nil {
 		settledAt := settlement.SettledAt.Format(time.RFC3339)
 		resp.SettledAt = &settledAt
+	}
+
+	return resp
+}
+
+// Topup Endpoints (US4: Wallet Top-Up via Iyzico)
+
+// CreateTopup handles POST /billing/topups
+// Creates a new wallet top-up and returns the payment URL.
+func (h *BillingHandler) CreateTopup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if topup service is available
+	if h.topupService == nil {
+		WriteError(w, r, NewInternalError("Topup service not available"))
+		return
+	}
+
+	// Parse request body
+	var req CreateTopupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid request body"))
+		return
+	}
+
+	// Validate request
+	if req.AmountKurus <= 0 {
+		WriteError(w, r, NewBadRequestError("amount_kurus must be positive"))
+		return
+	}
+	if req.ReturnURL == "" {
+		WriteError(w, r, NewBadRequestError("return_url is required"))
+		return
+	}
+
+	// Get idempotency key from header or generate one
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.New().String()
+	}
+
+	// Get client IP
+	clientIP := r.RemoteAddr
+	if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+		clientIP = forwardedFor
+	}
+
+	// Create topup
+	result, err := h.topupService.Create(ctx, &billing.CreateTopupRequest{
+		OrganizationID: orgID,
+		AmountKurus:    req.AmountKurus,
+		ReturnURL:      req.ReturnURL,
+		IdempotencyKey: idempotencyKey,
+		OrgName:        req.OrgName,
+		OrgEmail:       req.OrgEmail,
+		OrgPhone:       req.OrgPhone,
+		OrgAddress:     req.OrgAddress,
+		OrgCity:        req.OrgCity,
+		ClientIP:       clientIP,
+	})
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupAmountTooLow) {
+			WriteError(w, r, NewBadRequestError("Amount is below minimum"))
+			return
+		}
+		if errors.Is(err, billing.ErrTopupAmountTooHigh) {
+			WriteError(w, r, NewBadRequestError("Amount exceeds maximum"))
+			return
+		}
+		if errors.Is(err, billing.ErrPaymentInitFailed) {
+			WriteError(w, r, NewBadRequestError("Payment initialization failed"))
+			return
+		}
+		h.logger.Error("Failed to create topup", "error", err, "org_id", orgID)
+		WriteError(w, r, NewInternalError("Failed to create topup"))
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, CreateTopupResponse{
+		Topup:      topupToResponse(result.Topup),
+		PaymentURL: result.PaymentURL,
+	})
+}
+
+// GetTopup handles GET /billing/topups/{id}
+// Returns a specific topup.
+func (h *BillingHandler) GetTopup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if topup service is available
+	if h.topupService == nil {
+		WriteError(w, r, NewInternalError("Topup service not available"))
+		return
+	}
+
+	// Get topup ID from URL
+	topupIDStr := chi.URLParam(r, "id")
+	topupID, err := uuid.Parse(topupIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid topup ID"))
+		return
+	}
+
+	// Get topup
+	topup, err := h.topupService.GetByOrganization(ctx, topupID, orgID)
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupNotFound) {
+			WriteError(w, r, NewNotFoundError("Topup"))
+			return
+		}
+		h.logger.Error("Failed to get topup", "error", err, "topup_id", topupID)
+		WriteError(w, r, NewInternalError("Failed to get topup"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, topupToResponse(topup))
+}
+
+// ListTopups handles GET /billing/topups
+// Returns topups for the organization.
+func (h *BillingHandler) ListTopups(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if topup service is available
+	if h.topupService == nil {
+		WriteError(w, r, NewInternalError("Topup service not available"))
+		return
+	}
+
+	// Parse query parameters
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var status *string
+	if s := r.URL.Query().Get("status"); s != "" {
+		status = &s
+	}
+
+	// Get topups
+	result, err := h.topupService.List(ctx, &billing.ListTopupsRequest{
+		OrganizationID: orgID,
+		Status:         status,
+		Offset:         offset,
+		Limit:          limit,
+	})
+	if err != nil {
+		h.logger.Error("Failed to list topups", "error", err, "org_id", orgID)
+		WriteError(w, r, NewInternalError("Failed to list topups"))
+		return
+	}
+
+	response := make([]TopupResponse, len(result.Topups))
+	for i, topup := range result.Topups {
+		response[i] = topupToResponse(topup)
+	}
+
+	writeJSON(w, http.StatusOK, PaginatedResponse{
+		Data:   response,
+		Total:  result.Total,
+		Offset: offset,
+		Limit:  limit,
+	})
+}
+
+// ConfirmTopup handles POST /billing/topups/{id}/confirm
+// Confirms a topup after payment completion.
+func (h *BillingHandler) ConfirmTopup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if topup service is available
+	if h.topupService == nil {
+		WriteError(w, r, NewInternalError("Topup service not available"))
+		return
+	}
+
+	// Get topup ID from URL
+	topupIDStr := chi.URLParam(r, "id")
+	topupID, err := uuid.Parse(topupIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid topup ID"))
+		return
+	}
+
+	// Verify organization ownership first
+	existingTopup, err := h.topupService.GetByOrganization(ctx, topupID, orgID)
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupNotFound) {
+			WriteError(w, r, NewNotFoundError("Topup"))
+			return
+		}
+		h.logger.Error("Failed to get topup", "error", err, "topup_id", topupID)
+		WriteError(w, r, NewInternalError("Failed to get topup"))
+		return
+	}
+
+	// Check if already completed
+	if existingTopup.Status == string(domain.TopupStatusCompleted) {
+		writeJSON(w, http.StatusOK, topupToResponse(existingTopup))
+		return
+	}
+
+	// Confirm topup
+	topup, err := h.topupService.Confirm(ctx, &billing.ConfirmTopupRequest{
+		TopupID: topupID,
+	})
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupNotFound) {
+			WriteError(w, r, NewNotFoundError("Topup"))
+			return
+		}
+		if errors.Is(err, billing.ErrTopupExpired) {
+			WriteError(w, r, NewBadRequestError("Topup has expired"))
+			return
+		}
+		if errors.Is(err, billing.ErrTopupInvalidState) {
+			WriteError(w, r, NewBadRequestError("Topup is in invalid state for confirmation"))
+			return
+		}
+		if errors.Is(err, billing.ErrPaymentConfirmFailed) {
+			WriteError(w, r, NewBadRequestError("Payment confirmation failed"))
+			return
+		}
+		h.logger.Error("Failed to confirm topup", "error", err, "topup_id", topupID)
+		WriteError(w, r, NewInternalError("Failed to confirm topup"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, topupToResponse(topup))
+}
+
+// CancelTopup handles POST /billing/topups/{id}/cancel
+// Cancels a pending topup.
+func (h *BillingHandler) CancelTopup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if topup service is available
+	if h.topupService == nil {
+		WriteError(w, r, NewInternalError("Topup service not available"))
+		return
+	}
+
+	// Get topup ID from URL
+	topupIDStr := chi.URLParam(r, "id")
+	topupID, err := uuid.Parse(topupIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid topup ID"))
+		return
+	}
+
+	// Verify organization ownership first
+	_, err = h.topupService.GetByOrganization(ctx, topupID, orgID)
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupNotFound) {
+			WriteError(w, r, NewNotFoundError("Topup"))
+			return
+		}
+		h.logger.Error("Failed to get topup", "error", err, "topup_id", topupID)
+		WriteError(w, r, NewInternalError("Failed to get topup"))
+		return
+	}
+
+	// Cancel topup
+	topup, err := h.topupService.Cancel(ctx, topupID)
+	if err != nil {
+		if errors.Is(err, billing.ErrTopupNotFound) {
+			WriteError(w, r, NewNotFoundError("Topup"))
+			return
+		}
+		if errors.Is(err, billing.ErrTopupInvalidState) {
+			WriteError(w, r, NewBadRequestError("Topup cannot be cancelled in current state"))
+			return
+		}
+		h.logger.Error("Failed to cancel topup", "error", err, "topup_id", topupID)
+		WriteError(w, r, NewInternalError("Failed to cancel topup"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, topupToResponse(topup))
+}
+
+// Topup Request/Response Types
+
+// CreateTopupRequest represents a request to create a topup.
+type CreateTopupRequest struct {
+	AmountKurus int64  `json:"amount_kurus"`
+	ReturnURL   string `json:"return_url"`
+	OrgName     string `json:"org_name,omitempty"`
+	OrgEmail    string `json:"org_email,omitempty"`
+	OrgPhone    string `json:"org_phone,omitempty"`
+	OrgAddress  string `json:"org_address,omitempty"`
+	OrgCity     string `json:"org_city,omitempty"`
+}
+
+// CreateTopupResponse represents the response from creating a topup.
+type CreateTopupResponse struct {
+	Topup      TopupResponse `json:"topup"`
+	PaymentURL string        `json:"payment_url"`
+}
+
+// TopupResponse represents a topup in API responses.
+type TopupResponse struct {
+	ID              uuid.UUID  `json:"id"`
+	OrganizationID  uuid.UUID  `json:"organization_id"`
+	AmountKurus     int64      `json:"amount_kurus"`
+	Currency        string     `json:"currency"`
+	Status          string     `json:"status"`
+	PaymentProvider string     `json:"payment_provider"`
+	PaymentURL      *string    `json:"payment_url,omitempty"`
+	LedgerEntryID   *uuid.UUID `json:"ledger_entry_id,omitempty"`
+	FailureReason   *string    `json:"failure_reason,omitempty"`
+	CompletedAt     *string    `json:"completed_at,omitempty"`
+	ExpiresAt       string     `json:"expires_at"`
+	CreatedAt       string     `json:"created_at"`
+	UpdatedAt       string     `json:"updated_at"`
+}
+
+// Conversion helper for topups
+func topupToResponse(topup *billing.Topup) TopupResponse {
+	resp := TopupResponse{
+		ID:              topup.ID,
+		OrganizationID:  topup.OrganizationID,
+		AmountKurus:     topup.AmountKurus,
+		Currency:        topup.Currency,
+		Status:          topup.Status,
+		PaymentProvider: topup.PaymentProvider,
+		PaymentURL:      topup.PaymentURL,
+		LedgerEntryID:   topup.LedgerEntryID,
+		FailureReason:   topup.FailureReason,
+		ExpiresAt:       topup.ExpiresAt.Format(time.RFC3339),
+		CreatedAt:       topup.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:       topup.UpdatedAt.Format(time.RFC3339),
+	}
+
+	if topup.CompletedAt != nil {
+		completedAt := topup.CompletedAt.Format(time.RFC3339)
+		resp.CompletedAt = &completedAt
 	}
 
 	return resp
