@@ -191,12 +191,12 @@
 - [x] T111 [US1] Implement internal/api/handler/provider.go with GET /providers, GET /providers/{code}, GET /providers/{code}/services endpoints
 - [x] T112 [US1] Implement internal/service/quote/service.go with quote creation, offer generation, and expiry handling
 - [x] T113 [US1] Implement internal/api/handler/quote.go with POST /quotes, GET /quotes/{id}, GET /quotes/{id}/offers, POST /quotes/{id}/refresh endpoints
-- [ ] T114 [US1] Implement internal/service/billing/wallet.go with balance calculation from ledger
-- [ ] T115 [US1] Implement internal/service/billing/ledger.go with debit/credit operations and invariant checks
-- [ ] T116 [US1] Implement internal/service/shipment/service.go with CreateFromOffer, PurchaseLabel, Get, List operations
-- [ ] T117 [US1] Implement internal/api/handler/shipment.go with POST /shipments, GET /shipments, GET /shipments/{id}, POST /shipments/{id}/purchase-label endpoints
-- [ ] T118 [US1] Implement internal/api/handler/document.go with GET /documents/{id} endpoint
-- [ ] T119 [US1] Implement internal/api/handler/billing.go with GET /billing/balance, GET /billing/ledger endpoints
+- [x] T114 [US1] Implement internal/service/billing/wallet.go with balance calculation from ledger
+- [x] T115 [US1] Implement internal/service/billing/ledger.go with debit/credit operations and invariant checks
+- [x] T116 [US1] Implement internal/service/shipment/service.go with CreateFromOffer, PurchaseLabel, Get, List operations
+- [x] T117 [US1] Implement internal/api/handler/shipment.go with POST /shipments, GET /shipments, GET /shipments/{id}, POST /shipments/{id}/purchase-label endpoints
+- [x] T118 [US1] Implement internal/api/handler/document.go with GET /documents/{id} endpoint
+- [x] T119 [US1] Implement internal/api/handler/billing.go with GET /billing/balance, GET /billing/ledger endpoints
 - [ ] T120 [US1] Implement internal/provider/aras/adapter.go with Aras SOAP adapter (GetQuote, CreateShipment, GetLabel)
 - [ ] T121 [US1] Implement internal/provider/aras/types.go with Aras-specific request/response types
 - [ ] T122 [US1] Implement internal/provider/aras/mapping.go with status code mapping
