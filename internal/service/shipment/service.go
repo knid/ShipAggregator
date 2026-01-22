@@ -17,26 +17,30 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/provider"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/service/billing"
+	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
 )
 
 // Common errors for shipment operations.
 var (
-	ErrShipmentNotFound      = errors.New("shipment not found")
-	ErrOfferNotFound         = errors.New("offer not found")
-	ErrOfferExpired          = errors.New("offer has expired")
-	ErrInvalidShipmentStatus = errors.New("invalid shipment status for this operation")
-	ErrLabelAlreadyPurchased = errors.New("label has already been purchased")
-	ErrInsufficientBalance   = errors.New("insufficient wallet balance")
-	ErrProviderError         = errors.New("provider error")
+	ErrShipmentNotFound        = errors.New("shipment not found")
+	ErrOfferNotFound           = errors.New("offer not found")
+	ErrOfferExpired            = errors.New("offer has expired")
+	ErrInvalidShipmentStatus   = errors.New("invalid shipment status for this operation")
+	ErrLabelAlreadyPurchased   = errors.New("label has already been purchased")
+	ErrInsufficientBalance     = errors.New("insufficient wallet balance")
+	ErrProviderError           = errors.New("provider error")
+	ErrProviderAccountNotFound = errors.New("provider account not found")
+	ErrProviderAccountInvalid  = errors.New("provider account is not verified")
 )
 
 // Service provides shipment management operations.
 type Service struct {
-	queries       *db.Queries
-	adapterPool   *provider.AdapterPool
-	ledgerService *billing.LedgerService
-	walletService *billing.WalletService
-	logger        *observability.Logger
+	queries        *db.Queries
+	adapterPool    *provider.AdapterPool
+	ledgerService  *billing.LedgerService
+	walletService  *billing.WalletService
+	accountService *providerservice.AccountService
+	logger         *observability.Logger
 }
 
 // NewService creates a new shipment service.
@@ -53,6 +57,25 @@ func NewService(
 		ledgerService: ledgerService,
 		walletService: walletService,
 		logger:        logger,
+	}
+}
+
+// NewServiceWithBYOA creates a new shipment service with BYOA support.
+func NewServiceWithBYOA(
+	queries *db.Queries,
+	adapterPool *provider.AdapterPool,
+	ledgerService *billing.LedgerService,
+	walletService *billing.WalletService,
+	accountService *providerservice.AccountService,
+	logger *observability.Logger,
+) *Service {
+	return &Service{
+		queries:        queries,
+		adapterPool:    adapterPool,
+		ledgerService:  ledgerService,
+		walletService:  walletService,
+		accountService: accountService,
+		logger:         logger,
 	}
 }
 
@@ -194,6 +217,9 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		return nil, ErrLabelAlreadyPurchased
 	}
 
+	// Determine if this is a BYOA shipment
+	isBYOA := !shipment.IsMarketplace && shipment.ProviderAccountID.Valid
+
 	// Get offer to determine price
 	var priceKurus int32
 	var costKurus *int32
@@ -205,13 +231,16 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		}
 	}
 
-	// Check wallet balance
-	hasSufficientBalance, err := s.walletService.HasSufficientBalance(ctx, req.OrganizationID, int64(priceKurus))
-	if err != nil {
-		return nil, fmt.Errorf("failed to check balance: %w", err)
-	}
-	if !hasSufficientBalance {
-		return nil, ErrInsufficientBalance
+	// For marketplace shipments, check wallet balance and charge
+	// For BYOA shipments, customer pays provider directly - no wallet charge
+	if !isBYOA {
+		hasSufficientBalance, err := s.walletService.HasSufficientBalance(ctx, req.OrganizationID, int64(priceKurus))
+		if err != nil {
+			return nil, fmt.Errorf("failed to check balance: %w", err)
+		}
+		if !hasSufficientBalance {
+			return nil, ErrInsufficientBalance
+		}
 	}
 
 	// Parse addresses and parcel
@@ -251,8 +280,8 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		declaredValueKurus = &dv
 	}
 
-	// Create shipment with provider
-	createResp, err := adapter.CreateShipment(ctx, provider.CreateShipmentRequest{
+	// Build create shipment request
+	createReq := provider.CreateShipmentRequest{
 		Origin:             originAddress,
 		Destination:        destAddress,
 		Parcel:             parcel,
@@ -261,12 +290,44 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		DeclaredValueKurus: declaredValueKurus,
 		Reference:          shipment.IdempotencyKey,
 		LabelFormat:        req.LabelFormat,
-	})
+	}
+
+	// For BYOA shipments, get and use customer credentials
+	if isBYOA && s.accountService != nil {
+		// Get provider account
+		account, err := s.accountService.GetAccount(ctx, shipment.ProviderAccountID.Bytes, req.OrganizationID)
+		if err != nil {
+			if errors.Is(err, providerservice.ErrAccountNotFound) {
+				return nil, ErrProviderAccountNotFound
+			}
+			return nil, fmt.Errorf("failed to get provider account: %w", err)
+		}
+
+		// Verify account is verified
+		if account.Status != domain.ProviderAccountStatusVerified.String() {
+			return nil, ErrProviderAccountInvalid
+		}
+
+		// Decrypt credentials
+		credentials, err := s.accountService.DecryptCredentials(ctx, account)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+		}
+
+		createReq.Credentials = credentials
+
+		// Record account usage
+		_ = s.accountService.RecordUsage(ctx, account.ID)
+	}
+
+	// Create shipment with provider
+	createResp, err := adapter.CreateShipment(ctx, createReq)
 	if err != nil {
 		s.logger.Error("Provider shipment creation failed",
 			"error", err,
 			"shipment_id", shipment.ID,
 			"provider_code", shipment.ProviderCode,
+			"is_byoa", isBYOA,
 		)
 		return nil, fmt.Errorf("%w: %v", ErrProviderError, err)
 	}
@@ -296,6 +357,12 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		}
 	}
 
+	// For BYOA shipments, don't charge wallet - set price to 0 for tracking
+	chargedPriceKurus := priceKurus
+	if isBYOA {
+		chargedPriceKurus = 0
+	}
+
 	// Update shipment with provider details
 	labelFormat := string(req.LabelFormat)
 	updatedShipment, err := s.queries.UpdateShipmentAfterLabelPurchase(ctx, db.UpdateShipmentAfterLabelPurchaseParams{
@@ -305,44 +372,47 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		ProviderBarcode:        &createResp.Barcode,
 		LabelDocumentID:        labelDocumentID,
 		LabelFormat:            &labelFormat,
-		PriceChargedKurus:      &priceKurus,
+		PriceChargedKurus:      &chargedPriceKurus,
 		CostKurus:              costKurus,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update shipment: %w", err)
 	}
 
-	// Debit wallet
-	_, err = s.ledgerService.Debit(ctx, &billing.DebitRequest{
-		OrganizationID: req.OrganizationID,
-		AmountKurus:    int64(priceKurus),
-		ReferenceType:  domain.ReferenceTypeShipment,
-		ReferenceID:    shipment.ID,
-		Description:    fmt.Sprintf("Shipment %s - %s %s", createResp.TrackingNumber, shipment.ProviderCode, shipment.ServiceCode),
-		Metadata: map[string]interface{}{
-			"shipment_id":     shipment.ID.String(),
-			"tracking_number": createResp.TrackingNumber,
-			"provider_code":   shipment.ProviderCode,
-			"service_code":    shipment.ServiceCode,
-		},
-		ActorID:   req.ActorID,
-		ActorType: req.ActorType,
-	})
-	if err != nil {
-		s.logger.Error("Failed to debit wallet for shipment",
-			"error", err,
-			"shipment_id", shipment.ID,
-			"amount_kurus", priceKurus,
-		)
-		// Note: In production, this should be handled with a saga/compensation pattern
-		// For now, we log the error but don't fail the operation
+	// Debit wallet only for marketplace shipments
+	if !isBYOA && priceKurus > 0 {
+		_, err = s.ledgerService.Debit(ctx, &billing.DebitRequest{
+			OrganizationID: req.OrganizationID,
+			AmountKurus:    int64(priceKurus),
+			ReferenceType:  domain.ReferenceTypeShipment,
+			ReferenceID:    shipment.ID,
+			Description:    fmt.Sprintf("Shipment %s - %s %s", createResp.TrackingNumber, shipment.ProviderCode, shipment.ServiceCode),
+			Metadata: map[string]interface{}{
+				"shipment_id":     shipment.ID.String(),
+				"tracking_number": createResp.TrackingNumber,
+				"provider_code":   shipment.ProviderCode,
+				"service_code":    shipment.ServiceCode,
+			},
+			ActorID:   req.ActorID,
+			ActorType: req.ActorType,
+		})
+		if err != nil {
+			s.logger.Error("Failed to debit wallet for shipment",
+				"error", err,
+				"shipment_id", shipment.ID,
+				"amount_kurus", priceKurus,
+			)
+			// Note: In production, this should be handled with a saga/compensation pattern
+			// For now, we log the error but don't fail the operation
+		}
 	}
 
 	s.logger.Info("Label purchased successfully",
 		"shipment_id", shipment.ID,
 		"tracking_number", createResp.TrackingNumber,
 		"provider_code", shipment.ProviderCode,
-		"price_kurus", priceKurus,
+		"price_kurus", chargedPriceKurus,
+		"is_byoa", isBYOA,
 	)
 
 	return &PurchaseLabelResult{

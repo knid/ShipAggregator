@@ -197,16 +197,16 @@
 - [x] T117 [US1] Implement internal/api/handler/shipment.go with POST /shipments, GET /shipments, GET /shipments/{id}, POST /shipments/{id}/purchase-label endpoints
 - [x] T118 [US1] Implement internal/api/handler/document.go with GET /documents/{id} endpoint
 - [x] T119 [US1] Implement internal/api/handler/billing.go with GET /billing/balance, GET /billing/ledger endpoints
-- [ ] T120 [US1] Implement internal/provider/aras/adapter.go with Aras SOAP adapter (GetQuote, CreateShipment, GetLabel)
-- [ ] T121 [US1] Implement internal/provider/aras/types.go with Aras-specific request/response types
-- [ ] T122 [US1] Implement internal/provider/aras/mapping.go with status code mapping
-- [ ] T123 [US1] Implement internal/provider/yurtici/adapter.go with Yurtiçi SOAP adapter
-- [ ] T124 [US1] Implement internal/provider/yurtici/types.go with Yurtiçi-specific types
-- [ ] T125 [US1] Implement internal/provider/yurtici/mapping.go with status code mapping
-- [ ] T126 [US1] Implement internal/provider/hepsijet/adapter.go with Hepsijet REST adapter
-- [ ] T127 [US1] Implement internal/provider/hepsijet/types.go with Hepsijet-specific types
-- [ ] T128 [US1] Implement internal/provider/hepsijet/mapping.go with status code mapping
-- [ ] T129 [US1] Register routes for US1 endpoints in internal/api/router.go
+- [x] T120 [US1] Implement internal/provider/aras/adapter.go with Aras SOAP adapter (GetQuote, CreateShipment, GetLabel)
+- [x] T121 [US1] Implement internal/provider/aras/types.go with Aras-specific request/response types
+- [x] T122 [US1] Implement internal/provider/aras/mapping.go with status code mapping
+- [x] T123 [US1] Implement internal/provider/yurtici/adapter.go with Yurtiçi SOAP adapter
+- [x] T124 [US1] Implement internal/provider/yurtici/types.go with Yurtiçi-specific types
+- [x] T125 [US1] Implement internal/provider/yurtici/mapping.go with status code mapping
+- [x] T126 [US1] Implement internal/provider/hepsijet/adapter.go with Hepsijet REST adapter
+- [x] T127 [US1] Implement internal/provider/hepsijet/types.go with Hepsijet-specific types
+- [x] T128 [US1] Implement internal/provider/hepsijet/mapping.go with status code mapping
+- [x] T129 [US1] Register routes for US1 endpoints in internal/api/router.go
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -220,13 +220,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T130 [P] [US2] Implement internal/service/provider/account.go with provider account CRUD and credential encryption
-- [ ] T131 [US2] Implement internal/service/provider/verification.go with credential verification via carrier API
-- [ ] T132 [US2] Implement internal/api/handler/provider_account.go with CRUD endpoints for /provider-accounts
-- [ ] T133 [US2] Implement POST /provider-accounts/{id}/verify endpoint in internal/api/handler/provider_account.go
-- [ ] T134 [US2] Update internal/service/quote/service.go to support use_byoa flag and BYOA pricing
-- [ ] T135 [US2] Update internal/service/shipment/service.go to handle BYOA shipments (no wallet charge for shipping)
-- [ ] T136 [US2] Register routes for US2 endpoints in internal/api/router.go
+- [X] T130 [P] [US2] Implement internal/service/provider/account.go with provider account CRUD and credential encryption
+- [X] T131 [US2] Implement internal/service/provider/verification.go with credential verification via carrier API
+- [X] T132 [US2] Implement internal/api/handler/provider_account.go with CRUD endpoints for /provider-accounts
+- [X] T133 [US2] Implement POST /provider-accounts/{id}/verify endpoint in internal/api/handler/provider_account.go
+- [X] T134 [US2] Update internal/service/quote/service.go to support use_byoa flag and BYOA pricing
+- [X] T135 [US2] Update internal/service/shipment/service.go to handle BYOA shipments (no wallet charge for shipping)
+- [X] T136 [US2] Register routes for US2 endpoints in internal/api/router.go
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 

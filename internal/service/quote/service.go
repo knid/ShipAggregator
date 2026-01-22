@@ -13,7 +13,9 @@ import (
 
 	"github.com/e-port/shipping-aggregator/internal/domain"
 	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/e-port/shipping-aggregator/internal/provider"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
+	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
 )
 
 // QuoteExpiry is the default expiry time for quotes (30 minutes).
@@ -24,8 +26,10 @@ const VATPercent = 20.0
 
 // Service provides quote and offer management operations.
 type Service struct {
-	queries *db.Queries
-	logger  *observability.Logger
+	queries        *db.Queries
+	adapterPool    *provider.AdapterPool
+	accountService *providerservice.AccountService
+	logger         *observability.Logger
 }
 
 // NewService creates a new quote service.
@@ -33,6 +37,21 @@ func NewService(queries *db.Queries, logger *observability.Logger) *Service {
 	return &Service{
 		queries: queries,
 		logger:  logger,
+	}
+}
+
+// NewServiceWithBYOA creates a new quote service with BYOA support.
+func NewServiceWithBYOA(
+	queries *db.Queries,
+	adapterPool *provider.AdapterPool,
+	accountService *providerservice.AccountService,
+	logger *observability.Logger,
+) *Service {
+	return &Service{
+		queries:        queries,
+		adapterPool:    adapterPool,
+		accountService: accountService,
+		logger:         logger,
 	}
 }
 
@@ -150,6 +169,183 @@ func (s *Service) CreateQuote(ctx context.Context, req *CreateQuoteRequest) (*Qu
 func (s *Service) generateOffers(ctx context.Context, quote *db.Quote, req *CreateQuoteRequest) ([]*db.Offer, error) {
 	var offers []*db.Offer
 
+	// If BYOA mode is enabled and we have provider accounts, generate BYOA offers
+	if req.UseBYOA && len(req.ProviderAccountIDs) > 0 && s.adapterPool != nil && s.accountService != nil {
+		byoaOffers, err := s.generateBYOAOffers(ctx, quote, req)
+		if err != nil {
+			s.logger.Error("Failed to generate BYOA offers", "error", err, "quote_id", quote.ID)
+			// Continue with marketplace offers if BYOA fails
+		} else {
+			offers = append(offers, byoaOffers...)
+		}
+	}
+
+	// Generate marketplace offers (always available)
+	marketplaceOffers, err := s.generateMarketplaceOffers(ctx, quote, req)
+	if err != nil {
+		s.logger.Error("Failed to generate marketplace offers", "error", err, "quote_id", quote.ID)
+	} else {
+		offers = append(offers, marketplaceOffers...)
+	}
+
+	return offers, nil
+}
+
+// generateBYOAOffers generates offers using customer's own provider accounts.
+func (s *Service) generateBYOAOffers(ctx context.Context, quote *db.Quote, req *CreateQuoteRequest) ([]*db.Offer, error) {
+	var offers []*db.Offer
+
+	// Get verified provider accounts
+	accounts, err := s.accountService.GetAccountsByIDs(ctx, req.ProviderAccountIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build address snapshots for provider API calls
+	// Note: For BYOA, we need to convert Address to AddressSnapshot
+	// The names (City, District, Neighborhood) should be resolved from reference data
+	// For now, we use the codes as placeholders - in production, these would be resolved
+	originSnapshot := domain.AddressSnapshot{
+		ContactName:      req.OriginAddress.ContactName,
+		CompanyName:      req.OriginAddress.CompanyName,
+		Phone:            req.OriginAddress.Phone,
+		Email:            req.OriginAddress.Email,
+		StreetLine1:      req.OriginAddress.StreetLine1,
+		StreetLine2:      req.OriginAddress.StreetLine2,
+		Neighborhood:     req.OriginAddress.NeighborhoodCode, // Would be resolved from ref data
+		NeighborhoodCode: req.OriginAddress.NeighborhoodCode,
+		District:         req.OriginAddress.DistrictCode, // Would be resolved from ref data
+		DistrictCode:     req.OriginAddress.DistrictCode,
+		City:             req.OriginAddress.CityCode, // Would be resolved from ref data
+		CityCode:         req.OriginAddress.CityCode,
+		PostalCode:       req.OriginAddress.PostalCode,
+	}
+
+	destSnapshot := domain.AddressSnapshot{
+		ContactName:      req.DestinationAddress.ContactName,
+		CompanyName:      req.DestinationAddress.CompanyName,
+		Phone:            req.DestinationAddress.Phone,
+		Email:            req.DestinationAddress.Email,
+		StreetLine1:      req.DestinationAddress.StreetLine1,
+		StreetLine2:      req.DestinationAddress.StreetLine2,
+		Neighborhood:     req.DestinationAddress.NeighborhoodCode, // Would be resolved from ref data
+		NeighborhoodCode: req.DestinationAddress.NeighborhoodCode,
+		District:         req.DestinationAddress.DistrictCode, // Would be resolved from ref data
+		DistrictCode:     req.DestinationAddress.DistrictCode,
+		City:             req.DestinationAddress.CityCode, // Would be resolved from ref data
+		CityCode:         req.DestinationAddress.CityCode,
+		PostalCode:       req.DestinationAddress.PostalCode,
+	}
+
+	// Prepare COD and declared value
+	var codAmountKurus *int64
+	if req.CODAmountKurus != nil {
+		cod := int64(*req.CODAmountKurus)
+		codAmountKurus = &cod
+	}
+
+	var declaredValueKurus *int64
+	if req.DeclaredValueKurus != nil {
+		dv := int64(*req.DeclaredValueKurus)
+		declaredValueKurus = &dv
+	}
+
+	// Generate offers for each provider account
+	for _, account := range accounts {
+		// Get provider adapter
+		providerCode := domain.ProviderCode(account.ProviderCode)
+		adapter, err := s.adapterPool.Get(providerCode)
+		if err != nil {
+			s.logger.Error("Failed to get provider adapter for BYOA",
+				"error", err,
+				"provider_code", account.ProviderCode,
+				"account_id", account.ID,
+			)
+			continue
+		}
+
+		// Decrypt credentials
+		credentials, err := s.accountService.DecryptCredentials(ctx, account)
+		if err != nil {
+			s.logger.Error("Failed to decrypt credentials for BYOA",
+				"error", err,
+				"account_id", account.ID,
+			)
+			continue
+		}
+
+		// Get quote from provider
+		quoteResp, err := adapter.GetQuote(ctx, provider.QuoteRequest{
+			Origin:             originSnapshot,
+			Destination:        destSnapshot,
+			Parcel:             *req.Parcel,
+			CODAmountKurus:     codAmountKurus,
+			DeclaredValueKurus: declaredValueKurus,
+			Credentials:        credentials,
+		})
+		if err != nil {
+			s.logger.Error("Failed to get BYOA quote from provider",
+				"error", err,
+				"provider_code", account.ProviderCode,
+				"account_id", account.ID,
+			)
+			continue
+		}
+
+		// Create offers from provider response
+		for _, providerOffer := range quoteResp.Offers {
+			expiresAt := providerOffer.ExpiresAt
+			if expiresAt.IsZero() {
+				expiresAt = time.Now().Add(QuoteExpiry)
+			}
+
+			// For BYOA, no margin - customer pays provider price directly
+			offerParams := db.CreateOfferParams{
+				QuoteID:            quote.ID,
+				ProviderCode:       account.ProviderCode,
+				ServiceCode:        providerOffer.ServiceCode,
+				ProviderAccountID:  pgtype.UUID{Bytes: account.ID, Valid: true},
+				IsMarketplace:      false, // BYOA offer
+				BasePriceKurus:     int32(providerOffer.BasePriceKurus),
+				FuelSurchargeKurus: int32(providerOffer.FuelSurchargeKurus),
+				CodFeeKurus:        int32(providerOffer.CODFeeKurus),
+				InsuranceFeeKurus:  int32(providerOffer.InsuranceFeeKurus),
+				OtherFeesKurus:     0,
+				SubtotalKurus:      int32(providerOffer.BasePriceKurus + providerOffer.FuelSurchargeKurus + providerOffer.CODFeeKurus + providerOffer.InsuranceFeeKurus),
+				VatKurus:           int32(providerOffer.VATKurus),
+				TotalPriceKurus:    int32(providerOffer.TotalPriceKurus),
+				CostPriceKurus:     nil, // No cost tracking for BYOA
+				MarginKurus:        nil, // No margin for BYOA
+				EstimatedDaysMin:   int32(providerOffer.EstimatedDaysMin),
+				EstimatedDaysMax:   int32(providerOffer.EstimatedDaysMax),
+				ProviderQuoteID:    &providerOffer.ProviderQuoteID,
+				ExpiresAt:          pgtype.Timestamptz{Time: expiresAt, Valid: true},
+			}
+
+			createdOffer, err := s.queries.CreateOffer(ctx, offerParams)
+			if err != nil {
+				s.logger.Error("Failed to create BYOA offer",
+					"error", err,
+					"provider_code", account.ProviderCode,
+					"service_code", providerOffer.ServiceCode,
+				)
+				continue
+			}
+
+			offers = append(offers, createdOffer)
+		}
+
+		// Record account usage
+		_ = s.accountService.RecordUsage(ctx, account.ID)
+	}
+
+	return offers, nil
+}
+
+// generateMarketplaceOffers generates offers using marketplace pricing.
+func (s *Service) generateMarketplaceOffers(ctx context.Context, quote *db.Quote, req *CreateQuoteRequest) ([]*db.Offer, error) {
+	var offers []*db.Offer
+
 	// Get all active providers
 	providers, err := s.queries.ListActiveProviders(ctx)
 	if err != nil {
@@ -170,11 +366,11 @@ func (s *Service) generateOffers(ctx context.Context, quote *db.Quote, req *Crea
 	}
 
 	// Generate offers for each provider
-	for _, provider := range providers {
+	for _, dbProvider := range providers {
 		// Get provider services
-		services, err := s.queries.ListActiveProviderServices(ctx, provider.Code)
+		services, err := s.queries.ListActiveProviderServices(ctx, dbProvider.Code)
 		if err != nil {
-			s.logger.Error("Failed to get provider services", "error", err, "provider", provider.Code)
+			s.logger.Error("Failed to get provider services", "error", err, "provider", dbProvider.Code)
 			continue
 		}
 
@@ -186,23 +382,23 @@ func (s *Service) generateOffers(ctx context.Context, quote *db.Quote, req *Crea
 			}
 
 			// Get rate plan
-			key := provider.Code + ":" + service.ServiceCode
+			key := dbProvider.Code + ":" + service.ServiceCode
 			ratePlan, ok := ratePlanMap[key]
 			if !ok {
 				continue
 			}
 
 			// Calculate pricing
-			offer, err := s.calculateOffer(ctx, quote.ID, provider, service, ratePlan, req)
+			offer, err := s.calculateOffer(ctx, quote.ID, dbProvider, service, ratePlan, req)
 			if err != nil {
-				s.logger.Error("Failed to calculate offer", "error", err, "provider", provider.Code, "service", service.ServiceCode)
+				s.logger.Error("Failed to calculate offer", "error", err, "provider", dbProvider.Code, "service", service.ServiceCode)
 				continue
 			}
 
 			// Create offer
 			createdOffer, err := s.queries.CreateOffer(ctx, *offer)
 			if err != nil {
-				s.logger.Error("Failed to create offer", "error", err, "provider", provider.Code, "service", service.ServiceCode)
+				s.logger.Error("Failed to create offer", "error", err, "provider", dbProvider.Code, "service", service.ServiceCode)
 				continue
 			}
 

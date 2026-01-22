@@ -13,7 +13,11 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/api/handler"
 	"github.com/e-port/shipping-aggregator/internal/api/middleware"
 	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/repository/redis"
+	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
+	"github.com/e-port/shipping-aggregator/internal/service/quote"
+	"github.com/e-port/shipping-aggregator/internal/service/shipment"
 )
 
 // RouterConfig holds configuration for the API router.
@@ -26,6 +30,8 @@ type RouterConfig struct {
 	Tracer *observability.Tracer
 	// DBPool is the database connection pool.
 	DBPool *pgxpool.Pool
+	// Queries is the database queries interface.
+	Queries *db.Queries
 	// RedisCache is the Redis cache.
 	RedisCache *redis.Cache
 	// RateLimiter is the rate limiter.
@@ -36,6 +42,14 @@ type RouterConfig struct {
 	SessionValidator middleware.SessionValidator
 	// OrganizationLoader loads organization information.
 	OrganizationLoader middleware.OrganizationLoader
+	// QuoteService is the quote service.
+	QuoteService *quote.Service
+	// ShipmentService is the shipment service.
+	ShipmentService *shipment.Service
+	// ProviderAccountService is the provider account service (US2: BYOA).
+	ProviderAccountService *providerservice.AccountService
+	// ProviderVerificationService is the provider verification service (US2: BYOA).
+	ProviderVerificationService *providerservice.VerificationService
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -115,6 +129,25 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	r.Get("/health/live", healthHandler.Live)
 	r.Get("/health/ready", healthHandler.Ready)
 
+	// Initialize handlers
+	var quoteHandler *handler.QuoteHandler
+	var shipmentHandler *handler.ShipmentHandler
+	var providerAccountHandler *handler.ProviderAccountHandler
+
+	if cfg.QuoteService != nil && cfg.Queries != nil {
+		quoteHandler = handler.NewQuoteHandler(cfg.QuoteService, cfg.Queries, cfg.Logger)
+	}
+	if cfg.ShipmentService != nil && cfg.Queries != nil {
+		shipmentHandler = handler.NewShipmentHandler(cfg.ShipmentService, cfg.Queries, cfg.Logger)
+	}
+	if cfg.ProviderAccountService != nil && cfg.ProviderVerificationService != nil {
+		providerAccountHandler = handler.NewProviderAccountHandler(
+			cfg.ProviderAccountService,
+			cfg.ProviderVerificationService,
+			cfg.Logger,
+		)
+	}
+
 	// API v1 routes
 	r.Route("/v1", func(r chi.Router) {
 		// Authentication middleware for all v1 routes
@@ -168,23 +201,36 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		// Health endpoint within v1 (for versioned health checks)
 		r.Get("/health", healthHandler.Ready)
 
-		// Quotes routes
+		// Quotes routes (US1: Multi-carrier rate shopping)
 		r.Route("/quotes", func(r chi.Router) {
 			r.Use(middleware.RequireScope("quotes:read"))
-			// r.Get("/", quotesHandler.List)
-			// r.Post("/", quotesHandler.Create)
-			// r.Get("/{quoteID}", quotesHandler.Get)
+			if quoteHandler != nil {
+				r.Get("/", quoteHandler.ListQuotes)
+				r.With(middleware.RequireScope("quotes:write")).Post("/", quoteHandler.CreateQuote)
+				r.Get("/{id}", quoteHandler.GetQuote)
+				r.Get("/{id}/offers", quoteHandler.GetQuoteOffers)
+				r.With(middleware.RequireScope("quotes:write")).Post("/{id}/refresh", quoteHandler.RefreshQuote)
+			}
 		})
 
-		// Shipments routes
+		// Offers routes (US1: Multi-carrier rate shopping)
+		r.Route("/offers", func(r chi.Router) {
+			r.Use(middleware.RequireScope("quotes:read"))
+			if quoteHandler != nil {
+				r.Get("/{id}", quoteHandler.GetOffer)
+			}
+		})
+
+		// Shipments routes (US1: Multi-carrier rate shopping)
 		r.Route("/shipments", func(r chi.Router) {
 			r.Use(middleware.RequireScope("shipments:read"))
-			// r.Get("/", shipmentsHandler.List)
-			// r.Post("/", shipmentsHandler.Create)
-			// r.Get("/{shipmentID}", shipmentsHandler.Get)
-			// r.Post("/{shipmentID}/cancel", shipmentsHandler.Cancel)
-			// r.Get("/{shipmentID}/label", shipmentsHandler.GetLabel)
-			// r.Get("/{shipmentID}/tracking", shipmentsHandler.GetTracking)
+			if shipmentHandler != nil {
+				r.Get("/", shipmentHandler.ListShipments)
+				r.With(middleware.RequireScope("shipments:write")).Post("/", shipmentHandler.CreateShipment)
+				r.Get("/{id}", shipmentHandler.GetShipment)
+				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/purchase-label", shipmentHandler.PurchaseLabel)
+				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
+			}
 		})
 
 		// Tracking routes
@@ -231,6 +277,42 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Get("/balance", billingHandler.GetBalance)
 			// r.Get("/transactions", billingHandler.ListTransactions)
 			// r.Post("/topup", billingHandler.CreateTopup)
+		})
+
+		// Providers routes (reference data)
+		r.Route("/providers", func(r chi.Router) {
+			r.Use(middleware.RequireScope("providers:read"))
+			// r.Get("/", providersHandler.List)
+			// r.Get("/{providerCode}", providersHandler.Get)
+			// r.Get("/{providerCode}/services", providersHandler.ListServices)
+
+			// Credential schema endpoint (US2: BYOA)
+			if providerAccountHandler != nil {
+				r.Get("/{provider_code}/credential-schema", providerAccountHandler.GetCredentialSchema)
+			}
+		})
+
+		// Provider Accounts routes (US2: Bring Your Own Account)
+		r.Route("/provider-accounts", func(r chi.Router) {
+			r.Use(middleware.RequireScope("provider-accounts:read"))
+			if providerAccountHandler != nil {
+				r.Get("/", providerAccountHandler.ListProviderAccounts)
+				r.With(middleware.RequireScope("provider-accounts:write")).Post("/", providerAccountHandler.CreateProviderAccount)
+				r.Get("/{id}", providerAccountHandler.GetProviderAccount)
+				r.With(middleware.RequireScope("provider-accounts:write")).Put("/{id}", providerAccountHandler.UpdateProviderAccount)
+				r.With(middleware.RequireScope("provider-accounts:write")).Delete("/{id}", providerAccountHandler.DeleteProviderAccount)
+				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/verify", providerAccountHandler.VerifyProviderAccount)
+				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/set-default", providerAccountHandler.SetDefaultProviderAccount)
+				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/suspend", providerAccountHandler.SuspendProviderAccount)
+			}
+		})
+
+		// Reference data routes
+		r.Route("/reference", func(r chi.Router) {
+			// Reference data is public within authenticated context
+			// r.Get("/cities", referenceHandler.ListCities)
+			// r.Get("/cities/{cityCode}/districts", referenceHandler.ListDistricts)
+			// r.Get("/districts/{districtCode}/neighborhoods", referenceHandler.ListNeighborhoods)
 		})
 	})
 
