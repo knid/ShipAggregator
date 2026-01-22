@@ -1,0 +1,301 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+#
+# Configuration for TR-Only Shipping Aggregation Backend
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+  
+  # Include test files
+  tests: true
+  
+  # List of build tags
+  build-tags:
+    - integration
+  
+  # Which dirs to skip
+  skip-dirs:
+    - vendor
+    - testdata
+    - tmp
+    - specs
+    - docs
+  
+  # Which files to skip
+  skip-files:
+    - ".*_test\\.go$"
+  
+  # Number of CPUs to use
+  concurrency: 4
+  
+  # Allow multiple parallel golangci-lint instances
+  allow-parallel-runners: true
+
+output:
+  # Format: colored-line-number|line-number|json|tab|checkstyle|code-climate|junit-xml|github-actions
+  formats:
+    - format: colored-line-number
+  
+  # Print lines of code with issue
+  print-issued-lines: true
+  
+  # Print linter name in the end of issue text
+  print-linter-name: true
+  
+  # Make issues output unique by line
+  uniq-by-line: true
+  
+  # Sort results by: filepath, line and column
+  sort-results: true
+
+linters:
+  enable:
+    # Default linters
+    - errcheck       # Check for unchecked errors
+    - gosimple       # Simplify code
+    - govet          # Vet examines Go source code
+    - ineffassign    # Detect ineffectual assignments
+    - staticcheck    # Static analysis
+    - unused         # Check for unused code
+    
+    # Additional linters
+    - bodyclose      # Check HTTP response body is closed
+    - contextcheck   # Check context.Context is passed correctly
+    - dupl           # Code clone detection
+    - durationcheck  # Check for two durations multiplied together
+    - errname        # Check error names
+    - errorlint      # Find code that will cause problems with error wrapping
+    - exhaustive     # Check exhaustiveness of enum switch statements
+    - exportloopref  # Check for pointers to enclosing loop variables
+    - forbidigo      # Forbid specific identifiers
+    - forcetypeassert # Find forced type assertions
+    - gochecknoinits # Check that no init functions are present
+    - goconst        # Find repeated strings that could be constants
+    - gocritic       # Provides diagnostics that check for bugs, performance and style issues
+    - gocyclo        # Computes cyclomatic complexity
+    - godot          # Check if comments end in a period
+    - gofmt          # Check whether code was gofmt-ed
+    - goimports      # Check import statements are formatted
+    - goprintffuncname # Check printf-like functions are named with f at the end
+    - gosec          # Security checker
+    - misspell       # Find commonly misspelled English words
+    - nakedret       # Find naked returns in functions
+    - nestif         # Reports deeply nested if statements
+    - nilerr         # Find code that returns nil even if it checks that the error is not nil
+    - nilnil         # Check for returning nil, nil
+    - noctx          # Find HTTP requests without context.Context
+    - nolintlint     # Reports ill-formed or insufficient nolint directives
+    - prealloc       # Find slice declarations that could be preallocated
+    - predeclared    # Find code that shadows predeclared identifiers
+    - revive         # Fast, configurable, extensible linter
+    - rowserrcheck   # Check whether Err of rows is checked
+    - sqlclosecheck  # Check that sql.Rows and sql.Stmt are closed
+    - stylecheck     # Stylecheck is a replacement for golint
+    - tenv           # Detect using os.Setenv instead of t.Setenv
+    - tparallel      # Detect inappropriate usage of t.Parallel()
+    - unconvert      # Remove unnecessary type conversions
+    - unparam        # Report unused function parameters
+    - wastedassign   # Find wasted assignment statements
+    - whitespace     # Check for unnecessary newlines
+  
+  disable:
+    - depguard       # Dependency guard (too strict for now)
+    - funlen         # Function length (handled by gocyclo)
+    - gochecknoglobals # No globals (too strict)
+    - gocognit       # Cognitive complexity (handled by gocyclo)
+    - godox          # TODO/FIXME comments (we want to allow these)
+    - goerr113       # Error handling (too strict)
+    - gomnd          # Magic numbers (too many false positives)
+    - lll            # Line length (handled by gofmt)
+    - nlreturn       # Newline before return (too strict)
+    - paralleltest   # Parallel tests (not always appropriate)
+    - testpackage    # Test package naming (we use same package)
+    - varnamelen     # Variable name length (too strict)
+    - wrapcheck      # Error wrapping (too strict)
+    - wsl            # Whitespace linter (too strict)
+
+linters-settings:
+  dupl:
+    threshold: 150
+  
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - io.Copy
+      - io.WriterTo.WriteTo
+  
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+  
+  exhaustive:
+    check-generated: false
+    default-signifies-exhaustive: true
+  
+  forbidigo:
+    forbid:
+      - p: ^fmt\.Print.*$
+        msg: "Use structured logging instead of fmt.Print"
+      - p: ^log\.(Print|Fatal|Panic).*$
+        msg: "Use structured logging instead of log package"
+  
+  gocyclo:
+    min-complexity: 15
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+      - unnamedResult
+  
+  godot:
+    scope: declarations
+    capital: false
+  
+  gofmt:
+    simplify: true
+  
+  goimports:
+    local-prefixes: github.com/e-port/shipping-aggregator
+  
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked (handled by errcheck)
+      - G304 # File path provided as taint input (false positives)
+    config:
+      G306:
+        "0644"
+  
+  misspell:
+    locale: US
+  
+  nakedret:
+    max-func-lines: 30
+  
+  nestif:
+    min-complexity: 4
+  
+  nolintlint:
+    allow-unused: false
+    require-explanation: true
+    require-specific: true
+  
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+  
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+  
+  staticcheck:
+    checks:
+      - all
+  
+  stylecheck:
+    checks:
+      - all
+      - -ST1000 # Package comments (too strict)
+      - -ST1003 # Naming conventions (handled by revive)
+    dot-import-whitelist:
+      - github.com/onsi/ginkgo/v2
+      - github.com/onsi/gomega
+  
+  unparam:
+    check-exported: false
+
+issues:
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 3
+  
+  # Show only new issues
+  new: false
+  
+  # Fix found issues (if supported by linter)
+  fix: false
+  
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - dupl
+        - errcheck
+        - forcetypeassert
+        - gosec
+        - noctx
+    
+    # Exclude some linters from running on generated files
+    - path: internal/repository/postgres/sqlc/
+      linters:
+        - dupl
+        - goconst
+        - stylecheck
+    
+    # Exclude some linters from running on main files
+    - path: cmd/
+      linters:
+        - gochecknoinits
+    
+    # Allow TODO comments
+    - source: "TODO"
+      linters:
+        - godot
+    
+    # Allow FIXME comments
+    - source: "FIXME"
+      linters:
+        - godot
+
+severity:
+  default-severity: warning
+  case-sensitive: false
+  rules:
+    - linters:
+        - gosec
+      severity: error
+    - linters:
+        - errcheck
+      severity: error
+    - linters:
+        - staticcheck
+      severity: error
