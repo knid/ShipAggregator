@@ -110,18 +110,18 @@
 
 ### Domain Models
 
-- [ ] T067 [P] Implement internal/domain/organization.go with Organization, OrganizationStatus types
-- [ ] T068 [P] Implement internal/domain/member.go with Member, MemberStatus types
-- [ ] T069 [P] Implement internal/domain/apikey.go with ApiKey, ApiKeyScope types
-- [ ] T070 [P] Implement internal/domain/address.go with Address type
-- [ ] T071 [P] Implement internal/domain/provider.go with Provider, ProviderService, ProviderAccount types
-- [ ] T072 [P] Implement internal/domain/quote.go with Quote, Offer, PriceBreakdown types
-- [ ] T073 [P] Implement internal/domain/shipment.go with Shipment, ShipmentStatus, Parcel types
-- [ ] T074 [P] Implement internal/domain/tracking.go with TrackingEvent, TrackingStatus types
-- [ ] T075 [P] Implement internal/domain/webhook.go with WebhookEndpoint, WebhookSubscription, WebhookDelivery types
-- [ ] T076 [P] Implement internal/domain/ledger.go with LedgerEntry, EntryType types
-- [ ] T077 [P] Implement internal/domain/topup.go with Topup, TopupStatus types
-- [ ] T078 [P] Implement internal/domain/errors.go with domain error types (ErrNotFound, ErrInsufficientBalance, etc.)
+- [x] T067 [P] Implement internal/domain/organization.go with Organization, OrganizationStatus types
+- [x] T068 [P] Implement internal/domain/member.go with Member, MemberStatus types
+- [x] T069 [P] Implement internal/domain/apikey.go with ApiKey, ApiKeyScope types
+- [x] T070 [P] Implement internal/domain/address.go with Address type
+- [x] T071 [P] Implement internal/domain/provider.go with Provider, ProviderService, ProviderAccount types
+- [x] T072 [P] Implement internal/domain/quote.go with Quote, Offer, PriceBreakdown types
+- [x] T073 [P] Implement internal/domain/shipment.go with Shipment, ShipmentStatus, Parcel types
+- [x] T074 [P] Implement internal/domain/tracking.go with TrackingEvent, TrackingStatus types
+- [x] T075 [P] Implement internal/domain/webhook.go with WebhookEndpoint, WebhookSubscription, WebhookDelivery types
+- [x] T076 [P] Implement internal/domain/ledger.go with LedgerEntry, EntryType types
+- [x] T077 [P] Implement internal/domain/topup.go with Topup, TopupStatus types
+- [x] T078 [P] Implement internal/domain/errors.go with domain error types (ErrNotFound, ErrInsufficientBalance, etc.)
 
 ### Crypto & Security
 
