@@ -240,12 +240,12 @@
 
 ### Implementation for User Story 3
 
-- [ ] T137 [P] [US3] Implement internal/service/billing/cod.go with COD settlement tracking and reconciliation
-- [ ] T138 [US3] Update internal/service/quote/service.go to filter providers by COD support and add cod_fee
-- [ ] T139 [US3] Update internal/service/shipment/service.go to handle COD shipments and create settlement records
-- [ ] T140 [US3] Implement internal/api/handler/billing.go GET /billing/cod/settlements endpoint
-- [ ] T141 [US3] Implement internal/api/handler/billing.go POST /billing/cod/settlements/reconcile endpoint (admin)
-- [ ] T142 [US3] Register routes for US3 endpoints in internal/api/router.go
+- [X] T137 [P] [US3] Implement internal/service/billing/cod.go with COD settlement tracking and reconciliation
+- [X] T138 [US3] Update internal/service/quote/service.go to filter providers by COD support and add cod_fee
+- [X] T139 [US3] Update internal/service/shipment/service.go to handle COD shipments and create settlement records
+- [X] T140 [US3] Implement internal/api/handler/billing.go GET /billing/cod/settlements endpoint
+- [X] T141 [US3] Implement internal/api/handler/billing.go POST /billing/cod/settlements/reconcile endpoint (admin)
+- [X] T142 [US3] Register routes for US3 endpoints in internal/api/router.go
 
 **Checkpoint**: COD shipments and settlement tracking functional
 

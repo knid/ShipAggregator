@@ -15,6 +15,7 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/observability"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/e-port/shipping-aggregator/internal/service/billing"
 	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
 	"github.com/e-port/shipping-aggregator/internal/service/quote"
 	"github.com/e-port/shipping-aggregator/internal/service/shipment"
@@ -50,6 +51,12 @@ type RouterConfig struct {
 	ProviderAccountService *providerservice.AccountService
 	// ProviderVerificationService is the provider verification service (US2: BYOA).
 	ProviderVerificationService *providerservice.VerificationService
+	// WalletService is the wallet service (US3: COD).
+	WalletService *billing.WalletService
+	// LedgerService is the ledger service (US3: COD).
+	LedgerService *billing.LedgerService
+	// CODService is the COD settlement service (US3: COD).
+	CODService *billing.CODService
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -133,6 +140,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	var quoteHandler *handler.QuoteHandler
 	var shipmentHandler *handler.ShipmentHandler
 	var providerAccountHandler *handler.ProviderAccountHandler
+	var billingHandler *handler.BillingHandler
 
 	if cfg.QuoteService != nil && cfg.Queries != nil {
 		quoteHandler = handler.NewQuoteHandler(cfg.QuoteService, cfg.Queries, cfg.Logger)
@@ -146,6 +154,22 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			cfg.ProviderVerificationService,
 			cfg.Logger,
 		)
+	}
+	if cfg.WalletService != nil && cfg.LedgerService != nil {
+		if cfg.CODService != nil {
+			billingHandler = handler.NewBillingHandlerWithCOD(
+				cfg.WalletService,
+				cfg.LedgerService,
+				cfg.CODService,
+				cfg.Logger,
+			)
+		} else {
+			billingHandler = handler.NewBillingHandler(
+				cfg.WalletService,
+				cfg.LedgerService,
+				cfg.Logger,
+			)
+		}
 	}
 
 	// API v1 routes
@@ -271,12 +295,27 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Post("/api-keys", organizationHandler.CreateAPIKey)
 		})
 
-		// Billing routes
+		// Billing routes (US3: COD Settlements)
 		r.Route("/billing", func(r chi.Router) {
 			r.Use(middleware.RequireScope("billing:read"))
-			// r.Get("/balance", billingHandler.GetBalance)
-			// r.Get("/transactions", billingHandler.ListTransactions)
-			// r.Post("/topup", billingHandler.CreateTopup)
+			if billingHandler != nil {
+				r.Get("/balance", billingHandler.GetBalance)
+				r.Get("/ledger", billingHandler.GetLedger)
+				r.Get("/ledger/summary", billingHandler.GetLedgerSummary)
+				r.Get("/ledger/{id}", billingHandler.GetLedgerEntry)
+
+				// COD Settlement routes (US3)
+				r.Route("/cod/settlements", func(r chi.Router) {
+					r.Get("/", billingHandler.ListCODSettlements)
+					r.Get("/summary", billingHandler.GetCODSettlementSummary)
+					r.Get("/{id}", billingHandler.GetCODSettlement)
+					r.With(middleware.RequireScope("billing:write")).Post("/{id}/dispute", billingHandler.DisputeCODSettlement)
+
+					// Admin-only reconciliation endpoints
+					r.With(middleware.RequireScope("billing:admin")).Post("/reconcile", billingHandler.ReconcileCODSettlements)
+					r.With(middleware.RequireScope("billing:admin")).Post("/{id}/collected", billingHandler.MarkCODSettlementCollected)
+				})
+			}
 		})
 
 		// Providers routes (reference data)

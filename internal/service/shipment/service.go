@@ -39,6 +39,7 @@ type Service struct {
 	adapterPool    *provider.AdapterPool
 	ledgerService  *billing.LedgerService
 	walletService  *billing.WalletService
+	codService     *billing.CODService
 	accountService *providerservice.AccountService
 	logger         *observability.Logger
 }
@@ -74,6 +75,27 @@ func NewServiceWithBYOA(
 		adapterPool:    adapterPool,
 		ledgerService:  ledgerService,
 		walletService:  walletService,
+		accountService: accountService,
+		logger:         logger,
+	}
+}
+
+// NewServiceWithCOD creates a new shipment service with COD support.
+func NewServiceWithCOD(
+	queries *db.Queries,
+	adapterPool *provider.AdapterPool,
+	ledgerService *billing.LedgerService,
+	walletService *billing.WalletService,
+	codService *billing.CODService,
+	accountService *providerservice.AccountService,
+	logger *observability.Logger,
+) *Service {
+	return &Service{
+		queries:        queries,
+		adapterPool:    adapterPool,
+		ledgerService:  ledgerService,
+		walletService:  walletService,
+		codService:     codService,
 		accountService: accountService,
 		logger:         logger,
 	}
@@ -407,12 +429,37 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		}
 	}
 
+	// Create COD settlement record if this is a COD shipment
+	if shipment.CodAmountKurus != nil && *shipment.CodAmountKurus > 0 && s.codService != nil {
+		_, err = s.codService.CreateSettlement(ctx, &billing.CreateCODSettlementRequest{
+			OrganizationID:      req.OrganizationID,
+			ShipmentID:          shipment.ID,
+			ProviderCode:        shipment.ProviderCode,
+			ExpectedAmountKurus: *shipment.CodAmountKurus,
+		})
+		if err != nil {
+			s.logger.Error("Failed to create COD settlement record",
+				"error", err,
+				"shipment_id", shipment.ID,
+				"cod_amount_kurus", *shipment.CodAmountKurus,
+			)
+			// Note: We don't fail the operation if COD settlement creation fails
+			// The settlement can be created manually later
+		} else {
+			s.logger.Info("COD settlement record created",
+				"shipment_id", shipment.ID,
+				"cod_amount_kurus", *shipment.CodAmountKurus,
+			)
+		}
+	}
+
 	s.logger.Info("Label purchased successfully",
 		"shipment_id", shipment.ID,
 		"tracking_number", createResp.TrackingNumber,
 		"provider_code", shipment.ProviderCode,
 		"price_kurus", chargedPriceKurus,
 		"is_byoa", isBYOA,
+		"has_cod", shipment.CodAmountKurus != nil && *shipment.CodAmountKurus > 0,
 	)
 
 	return &PurchaseLabelResult{
