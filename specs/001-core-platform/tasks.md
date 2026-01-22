@@ -125,8 +125,8 @@
 
 ### Crypto & Security
 
-- [ ] T079 Implement internal/crypto/aes.go with AES-256-GCM encryption/decryption for credentials
-- [ ] T080 Implement internal/crypto/hmac.go with HMAC-SHA256 signing for webhooks
+- [x] T079 Implement internal/crypto/aes.go with AES-256-GCM encryption/decryption for credentials
+- [x] T080 Implement internal/crypto/hmac.go with HMAC-SHA256 signing for webhooks
 
 ### Observability
 
