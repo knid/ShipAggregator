@@ -165,9 +165,9 @@
 
 ### Entry Points
 
-- [ ] T101 Implement cmd/api/main.go with HTTP server entrypoint
-- [ ] T102 Implement cmd/worker/main.go with Asynq worker entrypoint
-- [ ] T103 Implement cmd/migrate/main.go with database migration tool
+- [x] T101 Implement cmd/api/main.go with HTTP server entrypoint
+- [x] T102 Implement cmd/worker/main.go with Asynq worker entrypoint
+- [x] T103 Implement cmd/migrate/main.go with database migration tool
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
