@@ -82,31 +82,31 @@
 
 ### Database Layer
 
-- [ ] T042 Create sqlc.yaml configuration file at repository root
-- [ ] T043 Create internal/repository/postgres/queries/organizations.sql with CRUD queries
-- [ ] T044 Create internal/repository/postgres/queries/members.sql with CRUD queries
-- [ ] T045 Create internal/repository/postgres/queries/roles.sql with CRUD queries
-- [ ] T046 Create internal/repository/postgres/queries/sessions.sql with CRUD queries
-- [ ] T047 Create internal/repository/postgres/queries/api_keys.sql with CRUD queries
-- [ ] T048 Create internal/repository/postgres/queries/addresses.sql with CRUD queries
-- [ ] T049 Create internal/repository/postgres/queries/providers.sql with read queries
-- [ ] T050 Create internal/repository/postgres/queries/provider_accounts.sql with CRUD queries
-- [ ] T051 Create internal/repository/postgres/queries/quotes.sql with CRUD queries
-- [ ] T052 Create internal/repository/postgres/queries/offers.sql with CRUD queries
-- [ ] T053 Create internal/repository/postgres/queries/shipments.sql with CRUD queries
-- [ ] T054 Create internal/repository/postgres/queries/tracking_events.sql with CRUD queries
-- [ ] T055 Create internal/repository/postgres/queries/documents.sql with CRUD queries
-- [ ] T056 Create internal/repository/postgres/queries/webhook_endpoints.sql with CRUD queries
-- [ ] T057 Create internal/repository/postgres/queries/webhook_subscriptions.sql with CRUD queries
-- [ ] T058 Create internal/repository/postgres/queries/webhook_deliveries.sql with CRUD queries
-- [ ] T059 Create internal/repository/postgres/queries/ledger_entries.sql with insert and read queries
-- [ ] T060 Create internal/repository/postgres/queries/topups.sql with CRUD queries
-- [ ] T061 Create internal/repository/postgres/queries/cod_settlements.sql with CRUD queries
-- [ ] T062 Create internal/repository/postgres/queries/idempotency.sql with CRUD queries
-- [ ] T063 Create internal/repository/postgres/queries/audit_logs.sql with insert and read queries
-- [ ] T064 Create internal/repository/postgres/queries/outbox.sql with CRUD queries
-- [ ] T065 Create internal/repository/postgres/queries/reference_data.sql with read queries for cities, districts, neighborhoods, postal_codes
-- [ ] T066 Run sqlc generate to create Go code from SQL queries
+- [x] T042 Create sqlc.yaml configuration file at repository root
+- [x] T043 Create internal/repository/postgres/queries/organizations.sql with CRUD queries
+- [x] T044 Create internal/repository/postgres/queries/members.sql with CRUD queries
+- [x] T045 Create internal/repository/postgres/queries/roles.sql with CRUD queries
+- [x] T046 Create internal/repository/postgres/queries/sessions.sql with CRUD queries
+- [x] T047 Create internal/repository/postgres/queries/api_keys.sql with CRUD queries
+- [x] T048 Create internal/repository/postgres/queries/addresses.sql with CRUD queries
+- [x] T049 Create internal/repository/postgres/queries/providers.sql with read queries
+- [x] T050 Create internal/repository/postgres/queries/provider_accounts.sql with CRUD queries
+- [x] T051 Create internal/repository/postgres/queries/quotes.sql with CRUD queries
+- [x] T052 Create internal/repository/postgres/queries/offers.sql with CRUD queries
+- [x] T053 Create internal/repository/postgres/queries/shipments.sql with CRUD queries
+- [x] T054 Create internal/repository/postgres/queries/tracking_events.sql with CRUD queries
+- [x] T055 Create internal/repository/postgres/queries/documents.sql with CRUD queries
+- [x] T056 Create internal/repository/postgres/queries/webhook_endpoints.sql with CRUD queries
+- [x] T057 Create internal/repository/postgres/queries/webhook_subscriptions.sql with CRUD queries
+- [x] T058 Create internal/repository/postgres/queries/webhook_deliveries.sql with CRUD queries
+- [x] T059 Create internal/repository/postgres/queries/ledger_entries.sql with insert and read queries
+- [x] T060 Create internal/repository/postgres/queries/topups.sql with CRUD queries
+- [x] T061 Create internal/repository/postgres/queries/cod_settlements.sql with CRUD queries
+- [x] T062 Create internal/repository/postgres/queries/idempotency.sql with CRUD queries
+- [x] T063 Create internal/repository/postgres/queries/audit_logs.sql with insert and read queries
+- [x] T064 Create internal/repository/postgres/queries/outbox.sql with CRUD queries
+- [x] T065 Create internal/repository/postgres/queries/reference_data.sql with read queries for cities, districts, neighborhoods, postal_codes
+- [x] T066 Run sqlc generate to create Go code from SQL queries
 
 ### Domain Models
 
