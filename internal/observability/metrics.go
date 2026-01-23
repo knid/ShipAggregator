@@ -79,6 +79,9 @@ type Metrics struct {
 	redisLatency     *prometheus.HistogramVec
 	redisCacheHits   *prometheus.CounterVec
 	redisCacheMisses *prometheus.CounterVec
+
+	// Error metrics
+	panicsTotal *prometheus.CounterVec
 }
 
 var (
@@ -106,6 +109,7 @@ func NewMetrics(cfg MetricsConfig) *Metrics {
 	m.initWorkerMetrics()
 	m.initDatabaseMetrics()
 	m.initRedisMetrics()
+	m.initErrorMetrics()
 
 	return m
 }
@@ -417,6 +421,20 @@ func (m *Metrics) initDatabaseMetrics() {
 	m.registry.MustRegister(m.dbQueryDuration)
 }
 
+// initErrorMetrics initializes error-related metrics.
+func (m *Metrics) initErrorMetrics() {
+	m.panicsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.config.Namespace,
+			Subsystem: m.config.Subsystem,
+			Name:      "panics_total",
+			Help:      "Total number of panics recovered",
+		},
+		[]string{"method", "path"},
+	)
+	m.registry.MustRegister(m.panicsTotal)
+}
+
 // initRedisMetrics initializes Redis-related metrics.
 func (m *Metrics) initRedisMetrics() {
 	m.redisOperations = prometheus.NewCounterVec(
@@ -621,6 +639,13 @@ func (m *Metrics) RecordRedisCacheHit(cacheType string) {
 // RecordRedisCacheMiss records a Redis cache miss.
 func (m *Metrics) RecordRedisCacheMiss(cacheType string) {
 	m.redisCacheMisses.WithLabelValues(cacheType).Inc()
+}
+
+// Error metrics methods
+
+// RecordPanic records a panic recovery.
+func (m *Metrics) RecordPanic(method, path string) {
+	m.panicsTotal.WithLabelValues(method, path).Inc()
 }
 
 // HTTPMetricsMiddleware returns an HTTP middleware that records metrics.

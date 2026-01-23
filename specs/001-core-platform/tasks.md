@@ -442,11 +442,11 @@
 - [x] T218 [P] Implement GET /billing/transactions combined view in internal/api/handler/billing.go
 - [x] T219 [P] Implement GET /providers/{code}/dropoff-points endpoint in internal/api/handler/provider.go
 - [x] T220 [P] Implement internal/api/handler/role.go with CRUD endpoints for /roles
-- [ ] T221 Code cleanup and refactoring across all packages
-- [ ] T222 Add request/response logging middleware in internal/api/middleware/logging.go
-- [ ] T223 Add panic recovery middleware in internal/api/middleware/recovery.go
-- [ ] T224 Run quickstart.md validation scenarios
-- [ ] T225 Security hardening review and fixes
+- [x] T221 Code cleanup and refactoring across all packages
+- [x] T222 Add request/response logging middleware in internal/api/middleware/logging.go
+- [x] T223 Add panic recovery middleware in internal/api/middleware/recovery.go
+- [x] T224 Run quickstart.md validation scenarios
+- [x] T225 Security hardening review and fixes
 
 ---
 

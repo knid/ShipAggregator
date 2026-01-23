@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -264,7 +265,7 @@ func authenticateAPIKey(ctx context.Context, token string, r *http.Request, cfg 
 
 	// Check IP allowlist
 	if len(keyInfo.IPAllowlist) > 0 {
-		clientIP := getClientIP(r)
+		clientIP := GetClientIP(r)
 		if !isIPAllowed(clientIP, keyInfo.IPAllowlist) {
 			return nil, domain.ErrAPIKeyIPNotAllowed
 		}
@@ -441,8 +442,8 @@ func hashToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// getClientIP extracts the client IP from the request.
-func getClientIP(r *http.Request) string {
+// GetClientIP extracts the client IP from the request.
+func GetClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header first
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
@@ -538,7 +539,7 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, code, detail string,
 	traceID := GetTraceID(r.Context())
 
 	// Simple JSON response - full RFC 7807 implementation is in handler/errors.go
-	response := `{"type":"https://api.shipaggregator.com/errors/` + strings.ToLower(strings.ReplaceAll(code, "_", "-")) + `","title":"` + getErrorTitle(code) + `","status":` + http.StatusText(status) + `,"detail":"` + detail + `","code":"` + code + `","trace_id":"` + traceID + `"}`
+	response := `{"type":"https://api.shipaggregator.com/errors/` + strings.ToLower(strings.ReplaceAll(code, "_", "-")) + `","title":"` + getErrorTitle(code) + `","status":` + strconv.Itoa(status) + `,"detail":"` + detail + `","code":"` + code + `","trace_id":"` + traceID + `"}`
 	_, _ = w.Write([]byte(response))
 }
 

@@ -168,7 +168,7 @@ func RateLimitByOrganization(cfg RateLimitConfig) func(http.Handler) http.Handle
 func RateLimitByIP(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	// Override key function to use client IP
 	cfg.KeyFunc = func(r *http.Request) string {
-		return fmt.Sprintf("ip:%s", getClientIP(r))
+		return fmt.Sprintf("ip:%s", GetClientIP(r))
 	}
 
 	return RateLimit(cfg)
@@ -180,7 +180,7 @@ func RateLimitByEndpoint(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	cfg.KeyFunc = func(r *http.Request) string {
 		authInfo := GetAuthInfo(r.Context())
 		if authInfo == nil {
-			return fmt.Sprintf("endpoint:%s:%s:ip:%s", r.Method, r.URL.Path, getClientIP(r))
+			return fmt.Sprintf("endpoint:%s:%s:ip:%s", r.Method, r.URL.Path, GetClientIP(r))
 		}
 		if authInfo.APIKeyID != uuid.Nil {
 			return fmt.Sprintf("endpoint:%s:%s:api_key:%s", r.Method, r.URL.Path, authInfo.APIKeyID.String())
@@ -238,7 +238,7 @@ func getRateLimitKey(r *http.Request, keyFunc func(r *http.Request) string) stri
 	}
 
 	// Fall back to IP address
-	return fmt.Sprintf("ip:%s", getClientIP(r))
+	return fmt.Sprintf("ip:%s", GetClientIP(r))
 }
 
 // shouldSkipRateLimit checks if the path should skip rate limiting.
