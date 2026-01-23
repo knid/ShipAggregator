@@ -17,19 +17,27 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/observability"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/service/shipment"
+	"github.com/e-port/shipping-aggregator/internal/service/tracking"
 )
 
 // ShipmentHandler handles shipment-related HTTP requests.
 type ShipmentHandler struct {
 	shipmentService *shipment.Service
+	trackingService *tracking.Service
 	queries         *db.Queries
 	logger          *observability.Logger
 }
 
 // NewShipmentHandler creates a new shipment handler.
-func NewShipmentHandler(shipmentService *shipment.Service, queries *db.Queries, logger *observability.Logger) *ShipmentHandler {
+func NewShipmentHandler(
+	shipmentService *shipment.Service,
+	trackingService *tracking.Service,
+	queries *db.Queries,
+	logger *observability.Logger,
+) *ShipmentHandler {
 	return &ShipmentHandler{
 		shipmentService: shipmentService,
+		trackingService: trackingService,
 		queries:         queries,
 		logger:          logger,
 	}
@@ -321,6 +329,100 @@ func (h *ShipmentHandler) CancelShipment(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, shipmentToResponse(s))
+}
+
+// GetTracking handles GET /shipments/{id}/tracking
+// Returns the tracking history for a shipment.
+func (h *ShipmentHandler) GetTracking(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Get shipment ID from URL
+	shipmentIDStr := chi.URLParam(r, "id")
+	shipmentID, err := uuid.Parse(shipmentIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid shipment ID"))
+		return
+	}
+
+	// Verify shipment belongs to organization
+	_, err = h.shipmentService.Get(ctx, shipmentID, orgID)
+	if err != nil {
+		h.handleShipmentError(w, r, err)
+		return
+	}
+
+	// Get tracking history
+	history, err := h.trackingService.GetTrackingHistory(ctx, shipmentID)
+	if err != nil {
+		if errors.Is(err, tracking.ErrShipmentNotFound) {
+			WriteError(w, r, NewNotFoundError("Shipment"))
+			return
+		}
+		h.logger.Error("Failed to get tracking history", "error", err, "shipment_id", shipmentID)
+		WriteError(w, r, NewInternalError("Failed to get tracking history"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, trackingHistoryToResponse(history))
+}
+
+// TrackingHistoryResponse represents the tracking history in API responses.
+type TrackingHistoryResponse struct {
+	ShipmentID     uuid.UUID               `json:"shipment_id"`
+	TrackingNumber string                  `json:"tracking_number"`
+	ProviderCode   string                  `json:"provider_code"`
+	CurrentStatus  string                  `json:"current_status"`
+	DeliveredAt    *string                 `json:"delivered_at,omitempty"`
+	Events         []TrackingEventResponse `json:"events"`
+}
+
+// TrackingEventResponse represents a tracking event in API responses.
+type TrackingEventResponse struct {
+	ID                uuid.UUID `json:"id"`
+	StatusCode        string    `json:"status_code"`
+	StatusDescription string    `json:"status_description"`
+	LocationCity      *string   `json:"location_city,omitempty"`
+	LocationDetail    *string   `json:"location_detail,omitempty"`
+	OccurredAt        string    `json:"occurred_at"`
+	Source            string    `json:"source"`
+	CreatedAt         string    `json:"created_at"`
+}
+
+func trackingHistoryToResponse(h *domain.TrackingHistory) TrackingHistoryResponse {
+	resp := TrackingHistoryResponse{
+		ShipmentID:     h.ShipmentID,
+		TrackingNumber: h.TrackingNumber,
+		ProviderCode:   string(h.ProviderCode),
+		CurrentStatus:  string(h.CurrentStatus),
+		Events:         make([]TrackingEventResponse, len(h.Events)),
+	}
+
+	if h.DeliveredAt != nil {
+		t := h.DeliveredAt.Format(time.RFC3339)
+		resp.DeliveredAt = &t
+	}
+
+	for i, e := range h.Events {
+		resp.Events[i] = TrackingEventResponse{
+			ID:                e.ID,
+			StatusCode:        string(e.StatusCode),
+			StatusDescription: e.StatusDescription,
+			LocationCity:      e.LocationCity,
+			LocationDetail:    e.LocationDetail,
+			OccurredAt:        e.OccurredAt.Format(time.RFC3339),
+			Source:            string(e.Source),
+			CreatedAt:         e.CreatedAt.Format(time.RFC3339),
+		}
+	}
+
+	return resp
 }
 
 // Response types

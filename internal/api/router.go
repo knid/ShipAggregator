@@ -21,6 +21,8 @@ import (
 	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
 	"github.com/e-port/shipping-aggregator/internal/service/quote"
 	"github.com/e-port/shipping-aggregator/internal/service/shipment"
+	"github.com/e-port/shipping-aggregator/internal/service/tracking"
+	"github.com/e-port/shipping-aggregator/internal/service/webhook"
 )
 
 // RouterConfig holds configuration for the API router.
@@ -65,6 +67,10 @@ type RouterConfig struct {
 	IyzicoClient *iyzico.Client
 	// IyzicoReturnURL is the return URL for Iyzico callbacks (US4: Wallet Top-Up).
 	IyzicoReturnURL string
+	// TrackingService is the tracking service (US5: Tracking Updates).
+	TrackingService *tracking.Service
+	// WebhookPublisher is the webhook publisher (US5: Webhooks).
+	WebhookPublisher *webhook.Publisher
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -154,7 +160,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		quoteHandler = handler.NewQuoteHandler(cfg.QuoteService, cfg.Queries, cfg.Logger)
 	}
 	if cfg.ShipmentService != nil && cfg.Queries != nil {
-		shipmentHandler = handler.NewShipmentHandler(cfg.ShipmentService, cfg.Queries, cfg.Logger)
+		shipmentHandler = handler.NewShipmentHandler(cfg.ShipmentService, cfg.TrackingService, cfg.Queries, cfg.Logger)
 	}
 	if cfg.ProviderAccountService != nil && cfg.ProviderVerificationService != nil {
 		providerAccountHandler = handler.NewProviderAccountHandler(
@@ -196,6 +202,34 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			cfg.IyzicoClient,
 			cfg.Logger,
 			cfg.IyzicoReturnURL,
+		)
+	}
+
+	// Initialize carrier tracking webhook handlers (US5: Tracking Updates)
+	var arasWebhookHandler *integration.ArasWebhookHandler
+	var yurticiWebhookHandler *integration.YurticiWebhookHandler
+	var hepsijetWebhookHandler *integration.HepsijetWebhookHandler
+	if cfg.TrackingService != nil && cfg.WebhookPublisher != nil {
+		arasWebhookHandler = integration.NewArasWebhookHandler(
+			cfg.DBPool,
+			cfg.Queries,
+			cfg.TrackingService,
+			cfg.WebhookPublisher,
+			cfg.Logger,
+		)
+		yurticiWebhookHandler = integration.NewYurticiWebhookHandler(
+			cfg.DBPool,
+			cfg.Queries,
+			cfg.TrackingService,
+			cfg.WebhookPublisher,
+			cfg.Logger,
+		)
+		hepsijetWebhookHandler = integration.NewHepsijetWebhookHandler(
+			cfg.DBPool,
+			cfg.Queries,
+			cfg.TrackingService,
+			cfg.WebhookPublisher,
+			cfg.Logger,
 		)
 	}
 
@@ -272,7 +306,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
-		// Shipments routes (US1: Multi-carrier rate shopping)
+		// Shipments routes (US1: Multi-carrier rate shopping, US5: Tracking)
 		r.Route("/shipments", func(r chi.Router) {
 			r.Use(middleware.RequireScope("shipments:read"))
 			if shipmentHandler != nil {
@@ -281,6 +315,8 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.Get("/{id}", shipmentHandler.GetShipment)
 				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/purchase-label", shipmentHandler.PurchaseLabel)
 				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
+				// US5: Tracking endpoint
+				r.Get("/{id}/tracking", shipmentHandler.GetTracking)
 			}
 		})
 
@@ -395,7 +431,19 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	r.Route("/webhooks", func(r chi.Router) {
 		// These endpoints receive webhooks from providers
 		// They have their own authentication (signature verification)
-		// r.Post("/tracking/{provider}", webhookReceiverHandler.ReceiveTracking)
+
+		// US5: Carrier tracking webhook endpoints
+		r.Route("/tracking", func(r chi.Router) {
+			if arasWebhookHandler != nil {
+				r.Post("/aras", arasWebhookHandler.HandleWebhook)
+			}
+			if yurticiWebhookHandler != nil {
+				r.Post("/yurtici", yurticiWebhookHandler.HandleWebhook)
+			}
+			if hepsijetWebhookHandler != nil {
+				r.Post("/hepsijet", hepsijetWebhookHandler.HandleWebhook)
+			}
+		})
 	})
 
 	// Integration endpoints (for external service callbacks)
@@ -407,6 +455,19 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.Post("/callback", iyzicoHandler.HandleCallback)
 				// Webhook endpoint - called by Iyzico for async notifications
 				r.Post("/webhook", iyzicoHandler.HandleWebhook)
+			}
+		})
+
+		// US5: Carrier tracking webhook endpoints (alternative path)
+		r.Route("/tracking", func(r chi.Router) {
+			if arasWebhookHandler != nil {
+				r.Post("/aras", arasWebhookHandler.HandleWebhook)
+			}
+			if yurticiWebhookHandler != nil {
+				r.Post("/yurtici", yurticiWebhookHandler.HandleWebhook)
+			}
+			if hepsijetWebhookHandler != nil {
+				r.Post("/hepsijet", hepsijetWebhookHandler.HandleWebhook)
 			}
 		})
 	})

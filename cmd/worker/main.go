@@ -16,7 +16,11 @@ import (
 
 	"github.com/e-port/shipping-aggregator/internal/config"
 	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/e-port/shipping-aggregator/internal/provider"
+	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	redisrepo "github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/e-port/shipping-aggregator/internal/service/tracking"
+	"github.com/e-port/shipping-aggregator/internal/service/webhook"
 	"github.com/e-port/shipping-aggregator/internal/worker"
 	"github.com/e-port/shipping-aggregator/internal/worker/tasks"
 )
@@ -127,20 +131,32 @@ func run() error {
 		KeyPrefix:  "shipping:",
 	}, slog.Default())
 
+	// Create Asynq client for enqueueing tasks
+	asynqClient, err := createAsynqClient(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create asynq client: %w", err)
+	}
+	defer asynqClient.Close()
+
 	// Create worker server
 	workerServer, err := worker.NewServer(cfg, worker.WithServerLogger(slog.Default()))
 	if err != nil {
 		return fmt.Errorf("failed to create worker server: %w", err)
 	}
 
+	// Create queries instance
+	queries := db.New(dbPool)
+
 	// Register task handlers
 	registerTaskHandlers(workerServer.Mux(), &taskHandlerDeps{
-		cfg:     cfg,
-		logger:  logger,
-		metrics: metrics,
-		tracer:  tracer,
-		dbPool:  dbPool,
-		cache:   cache,
+		cfg:         cfg,
+		logger:      logger,
+		metrics:     metrics,
+		tracer:      tracer,
+		dbPool:      dbPool,
+		queries:     queries,
+		cache:       cache,
+		asynqClient: asynqClient,
 	})
 
 	// Create scheduler for periodic tasks
@@ -201,126 +217,61 @@ func run() error {
 
 // taskHandlerDeps holds dependencies for task handlers.
 type taskHandlerDeps struct {
-	cfg     *config.Config
-	logger  *observability.Logger
-	metrics *observability.Metrics
-	tracer  *observability.Tracer
-	dbPool  *pgxpool.Pool
-	cache   *redisrepo.Cache
+	cfg         *config.Config
+	logger      *observability.Logger
+	metrics     *observability.Metrics
+	tracer      *observability.Tracer
+	dbPool      *pgxpool.Pool
+	queries     *db.Queries
+	cache       *redisrepo.Cache
+	asynqClient *asynq.Client
 }
 
 // registerTaskHandlers registers all task handlers with the mux.
 func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
-	// Webhook delivery task
-	mux.HandleFunc(tasks.TypeWebhookDelivery, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseWebhookDeliveryPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse webhook delivery payload: %w", err)
-		}
-		deps.logger.Info("processing webhook delivery",
-			"delivery_id", payload.DeliveryID,
-		)
-		// TODO: Implement webhook delivery logic
-		return nil
-	})
+	// Create services needed by handlers
+	// Note: In a production system, these would be properly initialized with all dependencies
+	trackingService := tracking.NewService(deps.dbPool, deps.queries, deps.logger)
+	webhookPublisher := webhook.NewPublisher(deps.dbPool, deps.queries, deps.logger)
+	adapterFactory := provider.NewAdapterFactory(slog.Default())
+	adapterPool := provider.NewAdapterPool(adapterFactory, slog.Default())
 
-	// Webhook retry task
-	mux.HandleFunc(tasks.TypeWebhookRetry, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseWebhookRetryPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse webhook retry payload: %w", err)
-		}
-		deps.logger.Info("processing webhook retry",
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement webhook retry logic
-		return nil
-	})
+	// Create task handlers
+	webhookDeliveryHandler := tasks.NewWebhookDeliveryHandler(deps.dbPool, deps.queries, deps.logger)
+	webhookRetryHandler := tasks.NewWebhookRetryHandler(deps.dbPool, deps.queries, deps.asynqClient, deps.logger)
+	webhookDLQHandler := tasks.NewWebhookDLQHandler(deps.dbPool, deps.queries, deps.logger)
+	trackingPollHandler := tasks.NewTrackingPollHandler(deps.dbPool, deps.queries, trackingService, webhookPublisher, adapterPool, deps.logger, deps.asynqClient)
+	trackingUpdateHandler := tasks.NewTrackingUpdateHandler(deps.dbPool, deps.queries, trackingService, webhookPublisher, adapterPool, deps.logger)
+	outboxPublisherHandler := tasks.NewOutboxPublisherHandler(deps.dbPool, deps.queries, deps.asynqClient, deps.logger)
+	outboxCleanupHandler := tasks.NewOutboxCleanupHandler(deps.dbPool, deps.queries, deps.logger)
+	idempotencyCleanupHandler := tasks.NewIdempotencyCleanupHandler(deps.dbPool, deps.queries, deps.logger)
+	retentionCleanupHandler := tasks.NewRetentionCleanupHandler(deps.dbPool, deps.queries, deps.logger)
+	quoteExpiryHandler := tasks.NewQuoteExpiryHandler(deps.dbPool, deps.queries, deps.logger)
+	reconciliationHandler := tasks.NewReconciliationHandler(deps.dbPool, deps.queries, deps.logger)
+	codSettlementHandler := tasks.NewCODSettlementHandler(deps.dbPool, deps.queries, deps.logger)
 
-	// Tracking poll task
-	mux.HandleFunc(tasks.TypeTrackingPoll, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseTrackingPollPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse tracking poll payload: %w", err)
-		}
-		deps.logger.Info("processing tracking poll",
-			"provider_code", payload.ProviderCode,
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement tracking poll logic
-		return nil
-	})
+	// Register webhook handlers
+	mux.HandleFunc(tasks.TypeWebhookDelivery, webhookDeliveryHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeWebhookRetry, webhookRetryHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeWebhookDLQ, webhookDLQHandler.ProcessTask)
 
-	// Tracking update task
-	mux.HandleFunc(tasks.TypeTrackingUpdate, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseTrackingUpdatePayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse tracking update payload: %w", err)
-		}
-		deps.logger.Info("processing tracking update",
-			"shipment_id", payload.ShipmentID,
-			"provider_code", payload.ProviderCode,
-		)
-		// TODO: Implement tracking update logic
-		return nil
-	})
+	// Register tracking handlers
+	mux.HandleFunc(tasks.TypeTrackingPoll, trackingPollHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeTrackingUpdate, trackingUpdateHandler.ProcessTask)
 
-	// Outbox publish task
-	mux.HandleFunc(tasks.TypeOutboxPublish, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseOutboxPublishPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse outbox publish payload: %w", err)
-		}
-		deps.logger.Debug("processing outbox publish",
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement outbox publish logic
-		return nil
-	})
+	// Register outbox handlers
+	mux.HandleFunc(tasks.TypeOutboxPublish, outboxPublisherHandler.ProcessTask)
 
-	// Idempotency cleanup task
-	mux.HandleFunc(tasks.TypeIdempotencyCleanup, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseIdempotencyCleanupPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse idempotency cleanup payload: %w", err)
-		}
-		deps.logger.Info("processing idempotency cleanup",
-			"max_age", payload.MaxAge,
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement idempotency cleanup logic
-		return nil
-	})
+	// Register cleanup handlers
+	mux.HandleFunc(tasks.TypeIdempotencyCleanup, idempotencyCleanupHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeRetentionCleanup, retentionCleanupHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeQuoteExpiry, quoteExpiryHandler.ProcessTask)
 
-	// Retention cleanup task
-	mux.HandleFunc(tasks.TypeRetentionCleanup, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseRetentionCleanupPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse retention cleanup payload: %w", err)
-		}
-		deps.logger.Info("processing retention cleanup",
-			"table_name", payload.TableName,
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement retention cleanup logic
-		return nil
-	})
+	// Register billing handlers
+	mux.HandleFunc(tasks.TypeReconciliation, reconciliationHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeCODSettlement, codSettlementHandler.ProcessTask)
 
-	// Reconciliation task
-	mux.HandleFunc(tasks.TypeReconciliation, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseReconciliationPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse reconciliation payload: %w", err)
-		}
-		deps.logger.Info("processing reconciliation",
-			"date", payload.Date,
-			"full_check", payload.FullCheck,
-		)
-		// TODO: Implement reconciliation logic
-		return nil
-	})
-
-	// Provider health check task
+	// Register provider health check handler (placeholder)
 	mux.HandleFunc(tasks.TypeProviderHealthCheck, func(ctx context.Context, task *asynq.Task) error {
 		payload, err := tasks.ParseProviderHealthCheckPayload(task)
 		if err != nil {
@@ -333,20 +284,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		return nil
 	})
 
-	// Quote expiry task
-	mux.HandleFunc(tasks.TypeQuoteExpiry, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseQuoteExpiryPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse quote expiry payload: %w", err)
-		}
-		deps.logger.Info("processing quote expiry",
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement quote expiry logic
-		return nil
-	})
-
-	// API key expiry notification task
+	// Register API key expiry notification handler (placeholder)
 	mux.HandleFunc(tasks.TypeAPIKeyExpiryNotification, func(ctx context.Context, task *asynq.Task) error {
 		payload, err := tasks.ParseAPIKeyExpiryNotificationPayload(task)
 		if err != nil {
@@ -359,7 +297,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		return nil
 	})
 
-	// Label generation task
+	// Register label generation handler (placeholder)
 	mux.HandleFunc(tasks.TypeLabelGeneration, func(ctx context.Context, task *asynq.Task) error {
 		payload, err := tasks.ParseLabelGenerationPayload(task)
 		if err != nil {
@@ -372,34 +310,35 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		return nil
 	})
 
-	// COD settlement task
-	mux.HandleFunc(tasks.TypeCODSettlement, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseCODSettlementPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse COD settlement payload: %w", err)
-		}
-		deps.logger.Info("processing COD settlement",
-			"settlement_id", payload.SettlementID,
-		)
-		// TODO: Implement COD settlement logic
-		return nil
-	})
-
-	// Webhook DLQ task
-	mux.HandleFunc(tasks.TypeWebhookDLQ, func(ctx context.Context, task *asynq.Task) error {
-		payload, err := tasks.ParseWebhookDLQPayload(task)
-		if err != nil {
-			return fmt.Errorf("failed to parse webhook DLQ payload: %w", err)
-		}
-		deps.logger.Info("processing webhook DLQ",
-			"delivery_id", payload.DeliveryID,
-			"batch_size", payload.BatchSize,
-		)
-		// TODO: Implement webhook DLQ logic
-		return nil
-	})
+	// Register outbox cleanup handler (internal task)
+	mux.HandleFunc("outbox:cleanup", outboxCleanupHandler.ProcessTask)
 
 	deps.logger.Info("all task handlers registered")
+}
+
+// createAsynqClient creates an Asynq client for enqueueing tasks.
+func createAsynqClient(cfg *config.Config) (*asynq.Client, error) {
+	var redisOpt asynq.RedisClientOpt
+
+	if cfg.Redis.URL != "" {
+		opts, err := redis.ParseURL(cfg.Redis.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+		}
+		redisOpt = asynq.RedisClientOpt{
+			Addr:     opts.Addr,
+			Password: opts.Password,
+			DB:       opts.DB,
+		}
+	} else {
+		redisOpt = asynq.RedisClientOpt{
+			Addr:     cfg.Redis.Addr(),
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		}
+	}
+
+	return asynq.NewClient(redisOpt), nil
 }
 
 // initDatabase initializes the PostgreSQL connection pool.

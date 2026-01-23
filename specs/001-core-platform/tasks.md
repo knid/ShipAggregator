@@ -287,14 +287,14 @@
 - [X] T155 [US5] Implement internal/api/handler/webhook.go with CRUD endpoints for /webhooks/subscriptions
 - [X] T156 [US5] Implement internal/api/handler/webhook.go with GET /webhooks/deliveries, POST /webhooks/deliveries/{id}/replay endpoints
 - [X] T157 [US5] Implement internal/api/handler/webhook.go POST /webhooks/endpoints/{id}/test endpoint
-- [ ] T158 [US5] Implement internal/api/integration/aras.go with Aras tracking webhook handler
-- [ ] T159 [US5] Implement internal/api/integration/yurtici.go with Yurtiçi tracking webhook handler
-- [ ] T160 [US5] Implement internal/api/integration/hepsijet.go with Hepsijet tracking webhook handler
-- [ ] T161 [US5] Implement internal/worker/tasks/webhook_delivery.go with webhook delivery task
-- [ ] T162 [US5] Implement internal/worker/tasks/outbox_publisher.go with outbox polling and publishing
-- [ ] T163 [US5] Implement internal/worker/tasks/tracking_poll.go with tracking poll for non-webhook providers
-- [ ] T164 [US5] Implement GET /shipments/{id}/tracking endpoint in internal/api/handler/shipment.go
-- [ ] T165 [US5] Register routes for US5 endpoints in internal/api/router.go
+- [X] T158 [US5] Implement internal/api/integration/aras.go with Aras tracking webhook handler
+- [X] T159 [US5] Implement internal/api/integration/yurtici.go with Yurtiçi tracking webhook handler
+- [X] T160 [US5] Implement internal/api/integration/hepsijet.go with Hepsijet tracking webhook handler
+- [X] T161 [US5] Implement internal/worker/tasks/webhook_delivery.go with webhook delivery task
+- [X] T162 [US5] Implement internal/worker/tasks/outbox_publisher.go with outbox polling and publishing
+- [X] T163 [US5] Implement internal/worker/tasks/tracking_poll.go with tracking poll for non-webhook providers
+- [X] T164 [US5] Implement GET /shipments/{id}/tracking endpoint in internal/api/handler/shipment.go
+- [X] T165 [US5] Register routes for US5 endpoints in internal/api/router.go
 
 **Checkpoint**: Tracking updates and customer webhooks functional
 
