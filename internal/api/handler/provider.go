@@ -345,6 +345,70 @@ func (h *ProviderHandler) ListCurrentMarketplaceRatePlans(w http.ResponseWriter,
 	writeJSON(w, http.StatusOK, response)
 }
 
+// GetDropoffPoints handles GET /providers/{code}/dropoff-points (T219)
+// Returns dropoff points for a specific provider.
+func (h *ProviderHandler) GetDropoffPoints(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		WriteError(w, r, NewBadRequestError("Provider code is required"))
+		return
+	}
+
+	// Parse query parameters for filtering
+	city := r.URL.Query().Get("city")
+	district := r.URL.Query().Get("district")
+	lat := r.URL.Query().Get("lat")
+	lng := r.URL.Query().Get("lng")
+	radius := r.URL.Query().Get("radius")
+
+	// Verify provider exists
+	_, err := h.queries.GetProviderByCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			WriteError(w, r, NewNotFoundError("Provider"))
+			return
+		}
+		h.logger.Error("Failed to get provider", "error", err, "code", code)
+		WriteError(w, r, NewInternalError("Failed to get provider"))
+		return
+	}
+
+	// Build response based on provider
+	// Note: In a real implementation, this would query a dropoff_points table
+	// or call the provider's API to get dropoff locations
+	dropoffPoints := getDropoffPointsForProvider(code, city, district, lat, lng, radius)
+
+	writeJSON(w, http.StatusOK, DropoffPointsResponse{
+		ProviderCode: code,
+		Points:       dropoffPoints,
+		Total:        len(dropoffPoints),
+	})
+}
+
+// getDropoffPointsForProvider returns dropoff points for a provider.
+// In a real implementation, this would query a database or external API.
+func getDropoffPointsForProvider(providerCode, city, district, lat, lng, radius string) []DropoffPointResponse {
+	// This is a placeholder implementation
+	// In production, this would:
+	// 1. Query a dropoff_points table in the database
+	// 2. Or call the provider's API to get dropoff locations
+	// 3. Filter by city/district/location as needed
+
+	// Return empty list for now - actual data would come from provider integration
+	// Each provider has different dropoff point networks:
+	// - Aras: Aras Kargo branches
+	// - Yurtici: Yurtici Kargo branches
+	// - HepsiJet: HepsiJet pickup points
+	// - PTT: PTT branches
+	// - MNG: MNG Kargo branches
+	// - Sendeo: Sendeo pickup points
+	// - Surat: Surat Kargo branches
+
+	return []DropoffPointResponse{}
+}
+
 // Response types
 
 // ProviderResponse represents a provider in API responses.
@@ -409,6 +473,28 @@ type MarketplaceRatePlanResponse struct {
 	EffectiveFrom        string    `json:"effective_from"`
 	EffectiveTo          *string   `json:"effective_to,omitempty"`
 	IsActive             bool      `json:"is_active"`
+}
+
+// DropoffPointsResponse represents the response for dropoff points.
+type DropoffPointsResponse struct {
+	ProviderCode string                 `json:"provider_code"`
+	Points       []DropoffPointResponse `json:"points"`
+	Total        int                    `json:"total"`
+}
+
+// DropoffPointResponse represents a single dropoff point.
+type DropoffPointResponse struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Address      string   `json:"address"`
+	City         string   `json:"city"`
+	District     string   `json:"district"`
+	PostalCode   string   `json:"postal_code,omitempty"`
+	Latitude     *float64 `json:"latitude,omitempty"`
+	Longitude    *float64 `json:"longitude,omitempty"`
+	Phone        *string  `json:"phone,omitempty"`
+	WorkingHours *string  `json:"working_hours,omitempty"`
+	IsActive     bool     `json:"is_active"`
 }
 
 // Helper functions

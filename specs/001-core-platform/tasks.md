@@ -438,10 +438,10 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T217 [P] Add OpenAPI spec serving at GET /v1/openapi.json in internal/api/router.go
-- [ ] T218 [P] Implement GET /billing/transactions combined view in internal/api/handler/billing.go
-- [ ] T219 [P] Implement GET /providers/{code}/dropoff-points endpoint in internal/api/handler/provider.go
-- [ ] T220 [P] Implement internal/api/handler/role.go with CRUD endpoints for /roles
+- [x] T217 [P] Add OpenAPI spec serving at GET /v1/openapi.json in internal/api/router.go
+- [x] T218 [P] Implement GET /billing/transactions combined view in internal/api/handler/billing.go
+- [x] T219 [P] Implement GET /providers/{code}/dropoff-points endpoint in internal/api/handler/provider.go
+- [x] T220 [P] Implement internal/api/handler/role.go with CRUD endpoints for /roles
 - [ ] T221 Code cleanup and refactoring across all packages
 - [ ] T222 Add request/response logging middleware in internal/api/middleware/logging.go
 - [ ] T223 Add panic recovery middleware in internal/api/middleware/recovery.go

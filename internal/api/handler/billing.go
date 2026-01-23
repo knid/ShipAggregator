@@ -330,6 +330,256 @@ type LedgerSummaryResponse struct {
 	ByReferenceType  map[string]int64 `json:"by_reference_type"`
 }
 
+// TransactionResponse represents a unified transaction in API responses.
+type TransactionResponse struct {
+	ID            uuid.UUID              `json:"id"`
+	Type          string                 `json:"type"` // ledger, topup, refund, cod_settlement
+	AmountKurus   int64                  `json:"amount_kurus"`
+	Direction     string                 `json:"direction"` // credit, debit
+	Status        string                 `json:"status"`
+	Description   string                 `json:"description"`
+	ReferenceType string                 `json:"reference_type,omitempty"`
+	ReferenceID   *uuid.UUID             `json:"reference_id,omitempty"`
+	BalanceAfter  *int64                 `json:"balance_after_kurus,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt     string                 `json:"created_at"`
+}
+
+// TransactionsResponse represents the combined transactions response.
+type TransactionsResponse struct {
+	Data   []TransactionResponse `json:"data"`
+	Total  int64                 `json:"total"`
+	Offset int                   `json:"offset"`
+	Limit  int                   `json:"limit"`
+}
+
+// GetTransactions handles GET /billing/transactions
+// Returns a combined view of all billing transactions.
+func (h *BillingHandler) GetTransactions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Parse query parameters
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Parse type filter (ledger, topup, refund, cod_settlement)
+	typeFilter := r.URL.Query().Get("type")
+
+	// Parse date range
+	var createdAfter *time.Time
+	if ca := r.URL.Query().Get("created_after"); ca != "" {
+		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+			createdAfter = &t
+		}
+	}
+
+	var createdBefore *time.Time
+	if cb := r.URL.Query().Get("created_before"); cb != "" {
+		if t, err := time.Parse(time.RFC3339, cb); err == nil {
+			createdBefore = &t
+		}
+	}
+
+	// Collect transactions from all sources
+	var transactions []TransactionResponse
+	var totalCount int64
+
+	// Get ledger entries if no type filter or type is "ledger"
+	if typeFilter == "" || typeFilter == "ledger" {
+		if h.ledgerService != nil {
+			result, err := h.ledgerService.List(ctx, &billing.ListLedgerRequest{
+				OrganizationID: orgID,
+				CreatedAfter:   createdAfter,
+				CreatedBefore:  createdBefore,
+				Offset:         0,
+				Limit:          limit * 2, // Get more to allow for sorting
+			})
+			if err == nil {
+				for _, entry := range result.Entries {
+					direction := "credit"
+					if entry.AmountKurus < 0 {
+						direction = "debit"
+					}
+					absAmount := entry.AmountKurus
+					if absAmount < 0 {
+						absAmount = -absAmount
+					}
+
+					var refID *uuid.UUID
+					if entry.ReferenceID != uuid.Nil {
+						refID = &entry.ReferenceID
+					}
+
+					transactions = append(transactions, TransactionResponse{
+						ID:            entry.ID,
+						Type:          "ledger",
+						AmountKurus:   absAmount,
+						Direction:     direction,
+						Status:        "completed",
+						Description:   entry.Description,
+						ReferenceType: entry.ReferenceType,
+						ReferenceID:   refID,
+						BalanceAfter:  &entry.BalanceAfterKurus,
+						Metadata:      entry.Metadata,
+						CreatedAt:     entry.CreatedAt.Format(time.RFC3339),
+					})
+				}
+				totalCount += result.Total
+			}
+		}
+	}
+
+	// Get topups if no type filter or type is "topup"
+	if typeFilter == "" || typeFilter == "topup" {
+		if h.topupService != nil {
+			result, err := h.topupService.List(ctx, &billing.ListTopupsRequest{
+				OrganizationID: orgID,
+				Offset:         0,
+				Limit:          limit * 2,
+			})
+			if err == nil {
+				for _, topup := range result.Topups {
+					// Filter by date if specified
+					if createdAfter != nil && topup.CreatedAt.Before(*createdAfter) {
+						continue
+					}
+					if createdBefore != nil && topup.CreatedAt.After(*createdBefore) {
+						continue
+					}
+
+					transactions = append(transactions, TransactionResponse{
+						ID:          topup.ID,
+						Type:        "topup",
+						AmountKurus: topup.AmountKurus,
+						Direction:   "credit",
+						Status:      topup.Status,
+						Description: "Wallet top-up via " + topup.PaymentProvider,
+						CreatedAt:   topup.CreatedAt.Format(time.RFC3339),
+					})
+				}
+				totalCount += result.Total
+			}
+		}
+	}
+
+	// Get refunds if no type filter or type is "refund"
+	if typeFilter == "" || typeFilter == "refund" {
+		if h.refundService != nil {
+			result, err := h.refundService.List(ctx, &billing.ListRefundsRequest{
+				OrganizationID: orgID,
+				CreatedAfter:   createdAfter,
+				CreatedBefore:  createdBefore,
+				Offset:         0,
+				Limit:          limit * 2,
+			})
+			if err == nil {
+				for _, refund := range result.Refunds {
+					transactions = append(transactions, TransactionResponse{
+						ID:            refund.ID,
+						Type:          "refund",
+						AmountKurus:   refund.AmountKurus,
+						Direction:     "credit",
+						Status:        refund.Status,
+						Description:   refund.Reason,
+						ReferenceType: refund.ReferenceType,
+						ReferenceID:   &refund.ReferenceID,
+						CreatedAt:     refund.CreatedAt.Format(time.RFC3339),
+					})
+				}
+				totalCount += result.Total
+			}
+		}
+	}
+
+	// Get COD settlements if no type filter or type is "cod_settlement"
+	if typeFilter == "" || typeFilter == "cod_settlement" {
+		if h.codService != nil {
+			result, err := h.codService.ListSettlements(ctx, &billing.ListSettlementsRequest{
+				OrganizationID: orgID,
+				Offset:         0,
+				Limit:          limit * 2,
+			})
+			if err == nil {
+				for _, settlement := range result.Settlements {
+					// Filter by date if specified
+					if createdAfter != nil && settlement.CreatedAt.Before(*createdAfter) {
+						continue
+					}
+					if createdBefore != nil && settlement.CreatedAt.After(*createdBefore) {
+						continue
+					}
+
+					amount := int64(settlement.ExpectedAmountKurus)
+					if settlement.ActualAmountKurus != nil {
+						amount = int64(*settlement.ActualAmountKurus)
+					}
+
+					transactions = append(transactions, TransactionResponse{
+						ID:            settlement.ID,
+						Type:          "cod_settlement",
+						AmountKurus:   amount,
+						Direction:     "credit",
+						Status:        settlement.Status,
+						Description:   "COD settlement from " + settlement.ProviderCode,
+						ReferenceType: "shipment",
+						ReferenceID:   &settlement.ShipmentID,
+						CreatedAt:     settlement.CreatedAt.Format(time.RFC3339),
+					})
+				}
+				totalCount += result.Total
+			}
+		}
+	}
+
+	// Sort transactions by created_at descending
+	sortTransactionsByDate(transactions)
+
+	// Apply pagination
+	start := offset
+	if start > len(transactions) {
+		start = len(transactions)
+	}
+	end := start + limit
+	if end > len(transactions) {
+		end = len(transactions)
+	}
+	paginatedTransactions := transactions[start:end]
+
+	writeJSON(w, http.StatusOK, TransactionsResponse{
+		Data:   paginatedTransactions,
+		Total:  totalCount,
+		Offset: offset,
+		Limit:  limit,
+	})
+}
+
+// sortTransactionsByDate sorts transactions by created_at in descending order.
+func sortTransactionsByDate(transactions []TransactionResponse) {
+	for i := 0; i < len(transactions)-1; i++ {
+		for j := i + 1; j < len(transactions); j++ {
+			// Parse dates and compare
+			ti, _ := time.Parse(time.RFC3339, transactions[i].CreatedAt)
+			tj, _ := time.Parse(time.RFC3339, transactions[j].CreatedAt)
+			if tj.After(ti) {
+				transactions[i], transactions[j] = transactions[j], transactions[i]
+			}
+		}
+	}
+}
+
 // Conversion helpers
 
 func ledgerEntryToResponse(entry *billing.LedgerEntry) LedgerEntryResponse {

@@ -1,0 +1,6134 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ShipAggregator API",
+    "description": "TR-Only Shipping Aggregation Backend API.\n\n## Authentication\n\n- **Dashboard Auth**: Session-based authentication for ops/admin users\n- **API Key Auth**: Bearer token authentication for customer integrations\n\n## Idempotency\n\nEndpoints marked with `Idempotency-Key` header requirement must include a unique\nclient-generated key. Duplicate requests with the same key return the original response.\n\n## Pagination\n\nList endpoints use cursor-based pagination with `cursor` and `limit` query parameters.\n\n## Error Handling\n\nAll errors follow RFC 7807 Problem Details format with additional `code` and `trace_id` fields.\n",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "email": "api-support@shipaggregator.com"
+    },
+    "license": {
+      "name": "Proprietary",
+      "url": "https://shipaggregator.com/terms"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.shipaggregator.com/v1",
+      "description": "Production"
+    },
+    {
+      "url": "https://api.sandbox.shipaggregator.com/v1",
+      "description": "Sandbox"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Dashboard authentication endpoints"
+    },
+    {
+      "name": "Organizations",
+      "description": "Organization management"
+    },
+    {
+      "name": "Roles",
+      "description": "Role and permission management"
+    },
+    {
+      "name": "API Keys",
+      "description": "API key management"
+    },
+    {
+      "name": "Reference Data",
+      "description": "Turkish address reference data"
+    },
+    {
+      "name": "Addresses",
+      "description": "Address book management"
+    },
+    {
+      "name": "Providers",
+      "description": "Carrier provider information"
+    },
+    {
+      "name": "Provider Accounts",
+      "description": "BYOA credential management"
+    },
+    {
+      "name": "Quotes",
+      "description": "Rate quotes and offers"
+    },
+    {
+      "name": "Shipments",
+      "description": "Shipment lifecycle management"
+    },
+    {
+      "name": "Documents",
+      "description": "Document retrieval"
+    },
+    {
+      "name": "Tracking",
+      "description": "Tracking webhooks from carriers"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Customer webhook management"
+    },
+    {
+      "name": "Billing",
+      "description": "Wallet, ledger, and payments"
+    },
+    {
+      "name": "Admin",
+      "description": "Administrative operations"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Dashboard login",
+        "description": "Authenticate dashboard user with email and password",
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": {
+                "email": "admin@example.com",
+                "password": "securepassword123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Dashboard logout",
+        "description": "Invalidate current session",
+        "operationId": "logout",
+        "security": [
+          {
+            "SessionAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Logout successful"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get current user",
+        "description": "Get authenticated user details and organization",
+        "operationId": "getCurrentUser",
+        "security": [
+          {
+            "SessionAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/orgs/current": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get current organization",
+        "description": "Get details of the authenticated user's organization",
+        "operationId": "getCurrentOrganization",
+        "responses": {
+          "200": {
+            "description": "Organization details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Update current organization",
+        "description": "Update organization settings",
+        "operationId": "updateCurrentOrganization",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Organization updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/orgs/current/members": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List organization members",
+        "description": "Get all members of the current organization",
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "invited",
+                "active",
+                "suspended"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Invite member",
+        "description": "Invite a new member to the organization",
+        "operationId": "inviteMember",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberInvite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Member invited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/orgs/current/members/{member_id}": {
+      "parameters": [
+        {
+          "name": "member_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Update member",
+        "description": "Update member role or status",
+        "operationId": "updateMember",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Remove member",
+        "description": "Remove member from organization",
+        "operationId": "removeMember",
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/roles": {
+      "get": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "List roles",
+        "description": "Get all roles available to the organization",
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "description": "List of roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Create role",
+        "description": "Create a custom role",
+        "operationId": "createRole",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Role created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/roles/{role_id}": {
+      "parameters": [
+        {
+          "name": "role_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Update role",
+        "description": "Update a custom role",
+        "operationId": "updateRole",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Delete role",
+        "description": "Delete a custom role (system roles cannot be deleted)",
+        "operationId": "deleteRole",
+        "responses": {
+          "204": {
+            "description": "Role deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api-keys": {
+      "get": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "List API keys",
+        "description": "Get all API keys for the organization",
+        "operationId": "listApiKeys",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Create API key",
+        "description": "Create a new API key. The secret is only returned once.",
+        "operationId": "createApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              },
+              "example": {
+                "name": "Production Integration",
+                "scopes": [
+                  "shipment:create",
+                  "shipment:read",
+                  "quote:create"
+                ],
+                "rate_limit_per_minute": 100
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "API key created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyWithSecret"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api-keys/{key_id}": {
+      "parameters": [
+        {
+          "name": "key_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Update API key",
+        "description": "Update API key settings (name, scopes, rate limit, IP allowlist)",
+        "operationId": "updateApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Revoke API key",
+        "description": "Permanently revoke an API key",
+        "operationId": "revokeApiKey",
+        "responses": {
+          "204": {
+            "description": "API key revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api-keys/{key_id}/rotate": {
+      "parameters": [
+        {
+          "name": "key_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Rotate API key",
+        "description": "Generate new secret. Old secret valid for 24 hours.",
+        "operationId": "rotateApiKey",
+        "responses": {
+          "200": {
+            "description": "API key rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyWithSecret"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/ref/cities": {
+      "get": {
+        "tags": [
+          "Reference Data"
+        ],
+        "summary": "List cities",
+        "description": "Get all Turkish cities",
+        "operationId": "listCities",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "List of cities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CityList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ref/districts": {
+      "get": {
+        "tags": [
+          "Reference Data"
+        ],
+        "summary": "List districts",
+        "description": "Get districts for a city",
+        "operationId": "listDistricts",
+        "security": [],
+        "parameters": [
+          {
+            "name": "city_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "34"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of districts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistrictList"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/ref/neighborhoods": {
+      "get": {
+        "tags": [
+          "Reference Data"
+        ],
+        "summary": "List neighborhoods",
+        "description": "Get neighborhoods for a district",
+        "operationId": "listNeighborhoods",
+        "security": [],
+        "parameters": [
+          {
+            "name": "district_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of neighborhoods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborhoodList"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/ref/postal-codes": {
+      "get": {
+        "tags": [
+          "Reference Data"
+        ],
+        "summary": "List postal codes",
+        "description": "Get postal codes for a district",
+        "operationId": "listPostalCodes",
+        "security": [],
+        "parameters": [
+          {
+            "name": "district_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of postal codes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostalCodeList"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/addresses": {
+      "get": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "List addresses",
+        "description": "Get saved addresses for the organization",
+        "operationId": "listAddresses",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sender",
+                "recipient",
+                "all"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of addresses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddressList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Create address",
+        "description": "Save a new address to the address book",
+        "operationId": "createAddress",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddressCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Address created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/addresses/{address_id}": {
+      "parameters": [
+        {
+          "name": "address_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Get address",
+        "description": "Get a specific address",
+        "operationId": "getAddress",
+        "responses": {
+          "200": {
+            "description": "Address details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Update address",
+        "description": "Update an existing address",
+        "operationId": "updateAddress",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddressUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Addresses"
+        ],
+        "summary": "Delete address",
+        "description": "Delete an address from the address book",
+        "operationId": "deleteAddress",
+        "responses": {
+          "204": {
+            "description": "Address deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "List providers",
+        "description": "Get all available carrier providers",
+        "operationId": "listProviders",
+        "responses": {
+          "200": {
+            "description": "List of providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/providers/{provider_code}": {
+      "parameters": [
+        {
+          "name": "provider_code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "example": "aras"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Get provider",
+        "description": "Get provider details and capabilities",
+        "operationId": "getProvider",
+        "responses": {
+          "200": {
+            "description": "Provider details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/providers/{provider_code}/services": {
+      "parameters": [
+        {
+          "name": "provider_code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "List provider services",
+        "description": "Get service levels offered by a provider",
+        "operationId": "listProviderServices",
+        "responses": {
+          "200": {
+            "description": "List of services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderServiceList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/providers/{provider_code}/dropoff-points": {
+      "parameters": [
+        {
+          "name": "provider_code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "List dropoff points",
+        "description": "Get dropoff/pickup points for a provider in a location",
+        "operationId": "listDropoffPoints",
+        "parameters": [
+          {
+            "name": "city_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "district_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of dropoff points",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DropoffPointList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/provider-accounts": {
+      "get": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "List provider accounts",
+        "description": "Get BYOA accounts for the organization",
+        "operationId": "listProviderAccounts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "provider_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_verification",
+                "verified",
+                "verification_failed",
+                "suspended"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of provider accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccountList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "Create provider account",
+        "description": "Register BYOA credentials for a carrier",
+        "operationId": "createProviderAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAccountCreate"
+              },
+              "example": {
+                "provider_code": "aras",
+                "name": "My Aras Account",
+                "credentials": {
+                  "username": "mycompany",
+                  "password": "secret123"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Provider account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccount"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/provider-accounts/{account_id}": {
+      "parameters": [
+        {
+          "name": "account_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "Get provider account",
+        "description": "Get provider account details",
+        "operationId": "getProviderAccount",
+        "responses": {
+          "200": {
+            "description": "Provider account details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccount"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "Update provider account",
+        "description": "Update provider account name or credentials",
+        "operationId": "updateProviderAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAccountUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provider account updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccount"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "Delete provider account",
+        "description": "Delete BYOA credentials",
+        "operationId": "deleteProviderAccount",
+        "responses": {
+          "204": {
+            "description": "Provider account deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/provider-accounts/{account_id}/verify": {
+      "parameters": [
+        {
+          "name": "account_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Provider Accounts"
+        ],
+        "summary": "Verify provider account",
+        "description": "Test credentials against carrier API",
+        "operationId": "verifyProviderAccount",
+        "responses": {
+          "200": {
+            "description": "Verification result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccountVerification"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/quotes": {
+      "post": {
+        "tags": [
+          "Quotes"
+        ],
+        "summary": "Create quote",
+        "description": "Request shipping quotes from carriers",
+        "operationId": "createQuote",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteCreate"
+              },
+              "example": {
+                "origin": {
+                  "contact_name": "Sender Name",
+                  "phone": "+905321234567",
+                  "street_line_1": "Atatürk Cad. No:123",
+                  "neighborhood_code": "340101001",
+                  "district_code": "3401",
+                  "city_code": "34"
+                },
+                "destination": {
+                  "contact_name": "Recipient Name",
+                  "phone": "+905329876543",
+                  "street_line_1": "İstiklal Cad. No:456",
+                  "neighborhood_code": "060101001",
+                  "district_code": "0601",
+                  "city_code": "06"
+                },
+                "parcel": {
+                  "weight_grams": 2500,
+                  "length_cm": 30,
+                  "width_cm": 20,
+                  "height_cm": 15
+                },
+                "cod_amount": "150.00"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Quote created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/quotes/{quote_id}": {
+      "parameters": [
+        {
+          "name": "quote_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Quotes"
+        ],
+        "summary": "Get quote",
+        "description": "Get quote details",
+        "operationId": "getQuote",
+        "responses": {
+          "200": {
+            "description": "Quote details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/quotes/{quote_id}/refresh": {
+      "parameters": [
+        {
+          "name": "quote_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Quotes"
+        ],
+        "summary": "Refresh quote",
+        "description": "Get updated offers for an existing quote",
+        "operationId": "refreshQuote",
+        "responses": {
+          "200": {
+            "description": "Quote refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "description": "Quote expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotes/{quote_id}/offers": {
+      "parameters": [
+        {
+          "name": "quote_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Quotes"
+        ],
+        "summary": "List quote offers",
+        "description": "Get all offers for a quote",
+        "operationId": "listQuoteOffers",
+        "responses": {
+          "200": {
+            "description": "List of offers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/shipments": {
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "List shipments",
+        "description": "Get shipments for the organization",
+        "operationId": "listShipments",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "label_purchased",
+                "pickup_scheduled",
+                "picked_up",
+                "in_transit",
+                "out_for_delivery",
+                "delivered",
+                "delivery_failed",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "provider_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of shipments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Create shipment",
+        "description": "Create a new shipment from an offer or with full details",
+        "operationId": "createShipment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentCreate"
+              },
+              "examples": {
+                "fromOffer": {
+                  "summary": "Create from offer",
+                  "value": {
+                    "offer_id": "550e8400-e29b-41d4-a716-446655440000"
+                  }
+                },
+                "direct": {
+                  "summary": "Direct creation",
+                  "value": {
+                    "provider_code": "aras",
+                    "service_code": "standard",
+                    "origin": {
+                      "contact_name": "Sender",
+                      "phone": "+905321234567",
+                      "street_line_1": "Address line",
+                      "neighborhood_code": "340101001",
+                      "district_code": "3401",
+                      "city_code": "34"
+                    },
+                    "destination": {
+                      "contact_name": "Recipient",
+                      "phone": "+905329876543",
+                      "street_line_1": "Address line",
+                      "neighborhood_code": "060101001",
+                      "district_code": "0601",
+                      "city_code": "06"
+                    },
+                    "parcel": {
+                      "weight_grams": 2500,
+                      "length_cm": 30,
+                      "width_cm": 20,
+                      "height_cm": 15
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Shipment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "410": {
+            "description": "Offer expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Get shipment",
+        "description": "Get shipment details",
+        "operationId": "getShipment",
+        "responses": {
+          "200": {
+            "description": "Shipment details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Update shipment",
+        "description": "Update shipment details (limited by status)",
+        "operationId": "updateShipment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Shipment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/purchase-label": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Purchase label",
+        "description": "Purchase shipping label and charge wallet",
+        "operationId": "purchaseLabel",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseLabelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Label purchased",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient balance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "Provider error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/label": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Get label",
+        "description": "Download shipping label",
+        "operationId": "getLabel",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pdf",
+                "zpl",
+                "png"
+              ],
+              "default": "pdf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Label document",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "ZPL commands"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/cancel": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Cancel shipment",
+        "description": "Cancel shipment and request refund",
+        "operationId": "cancelShipment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelShipmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Shipment cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "Provider rejected cancellation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/pickup": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Schedule pickup",
+        "description": "Schedule carrier pickup for shipment",
+        "operationId": "schedulePickup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulePickupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pickup scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/return": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Create return",
+        "description": "Create return shipment for delivered package",
+        "operationId": "createReturn",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReturnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Return shipment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment_id}/tracking": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Get tracking",
+        "description": "Get tracking events for shipment",
+        "operationId": "getTracking",
+        "responses": {
+          "200": {
+            "description": "Tracking events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingEventList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/documents/{document_id}": {
+      "parameters": [
+        {
+          "name": "document_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get document",
+        "description": "Download a document",
+        "operationId": "getDocument",
+        "responses": {
+          "200": {
+            "description": "Document content",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/integrations/{provider_code}/tracking-webhook": {
+      "parameters": [
+        {
+          "name": "provider_code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Tracking"
+        ],
+        "summary": "Receive tracking webhook",
+        "description": "Endpoint for carriers to push tracking updates",
+        "operationId": "receiveTrackingWebhook",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Provider-specific payload"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "string",
+                "description": "SOAP/XML payload for SOAP providers"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook received"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "401": {
+            "description": "Invalid signature"
+          }
+        }
+      }
+    },
+    "/integrations/{provider_code}/poll-tracking": {
+      "parameters": [
+        {
+          "name": "provider_code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Tracking"
+        ],
+        "summary": "Poll tracking (admin)",
+        "description": "Manually trigger tracking poll for a provider",
+        "operationId": "pollTracking",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shipment_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Poll initiated"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/webhooks/endpoints": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List webhook endpoints",
+        "description": "Get registered webhook endpoints",
+        "operationId": "listWebhookEndpoints",
+        "responses": {
+          "200": {
+            "description": "List of endpoints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Create webhook endpoint",
+        "description": "Register a new webhook endpoint",
+        "operationId": "createWebhookEndpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Endpoint created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/webhooks/endpoints/{endpoint_id}": {
+      "parameters": [
+        {
+          "name": "endpoint_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Update webhook endpoint",
+        "description": "Update endpoint URL or regenerate secret",
+        "operationId": "updateWebhookEndpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Endpoint updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Delete webhook endpoint",
+        "description": "Delete endpoint and all subscriptions",
+        "operationId": "deleteWebhookEndpoint",
+        "responses": {
+          "204": {
+            "description": "Endpoint deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/webhooks/endpoints/{endpoint_id}/test": {
+      "parameters": [
+        {
+          "name": "endpoint_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Test webhook endpoint",
+        "description": "Send a test webhook to the endpoint",
+        "operationId": "testWebhookEndpoint",
+        "responses": {
+          "200": {
+            "description": "Test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookTestResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/webhooks/subscriptions": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List subscriptions",
+        "description": "Get webhook subscriptions",
+        "operationId": "listWebhookSubscriptions",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of subscriptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSubscriptionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Create subscription",
+        "description": "Subscribe endpoint to event type",
+        "operationId": "createWebhookSubscription",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookSubscriptionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSubscription"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/webhooks/subscriptions/{subscription_id}": {
+      "parameters": [
+        {
+          "name": "subscription_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Update subscription",
+        "description": "Enable or disable subscription",
+        "operationId": "updateWebhookSubscription",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookSubscriptionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Subscription updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSubscription"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Delete subscription",
+        "description": "Unsubscribe from event type",
+        "operationId": "deleteWebhookSubscription",
+        "responses": {
+          "204": {
+            "description": "Subscription deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/webhooks/deliveries": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List deliveries",
+        "description": "Get webhook delivery history",
+        "operationId": "listWebhookDeliveries",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "delivered",
+                "failed",
+                "dlq"
+              ]
+            }
+          },
+          {
+            "name": "endpoint_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of deliveries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/webhooks/deliveries/{delivery_id}": {
+      "parameters": [
+        {
+          "name": "delivery_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Get delivery",
+        "description": "Get delivery details",
+        "operationId": "getWebhookDelivery",
+        "responses": {
+          "200": {
+            "description": "Delivery details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/webhooks/deliveries/{delivery_id}/replay": {
+      "parameters": [
+        {
+          "name": "delivery_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Replay delivery",
+        "description": "Retry failed webhook delivery",
+        "operationId": "replayWebhookDelivery",
+        "responses": {
+          "202": {
+            "description": "Replay initiated"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/billing/balance": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Get balance",
+        "description": "Get current wallet balance",
+        "operationId": "getBalance",
+        "responses": {
+          "200": {
+            "description": "Wallet balance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/billing/ledger": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Get ledger",
+        "description": "Get ledger entries",
+        "operationId": "getLedger",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "entry_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "credit",
+                "debit"
+              ]
+            }
+          },
+          {
+            "name": "reference_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ledger entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerEntryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/billing/topups": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List topups",
+        "description": "Get topup history",
+        "operationId": "listTopups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of topups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopupList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Create topup",
+        "description": "Initiate wallet topup via Iyzico",
+        "operationId": "createTopup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopupCreate"
+              },
+              "example": {
+                "amount": "1000.00",
+                "return_url": "https://myapp.com/payment/callback"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Topup initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topup"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/billing/topups/{topup_id}/confirm": {
+      "parameters": [
+        {
+          "name": "topup_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Confirm topup",
+        "description": "Confirm topup after Iyzico callback",
+        "operationId": "confirmTopup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopupConfirm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Topup confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topup"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/billing/refunds": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Request refund",
+        "description": "Request a refund for a charge",
+        "operationId": "createRefund",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Refund requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refund"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/billing/transactions": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List transactions",
+        "description": "Get transaction history (combined view)",
+        "operationId": "listTransactions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "topup",
+                "shipment",
+                "refund",
+                "cod_settlement"
+              ]
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/billing/cod/settlements": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List COD settlements",
+        "description": "Get COD settlement records",
+        "operationId": "listCodSettlements",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "collected",
+                "settled",
+                "disputed"
+              ]
+            }
+          },
+          {
+            "name": "provider_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "COD settlements",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodSettlementList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/billing/cod/settlements/reconcile": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Reconcile COD settlements (admin)",
+        "description": "Process carrier settlement report",
+        "operationId": "reconcileCodSettlements",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodReconcileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reconciliation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodReconcileResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List audit logs",
+        "description": "Get system audit logs",
+        "operationId": "listAuditLogs",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "actor_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "member",
+                "api_key",
+                "system"
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/provider-logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List provider logs",
+        "description": "Get provider API call logs",
+        "operationId": "listProviderLogs",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "provider_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "success",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderLogList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/health/providers": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get provider health",
+        "description": "Get health status of all providers",
+        "operationId": "getProviderHealth",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderHealthList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/webhooks/dlq/reprocess": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Reprocess DLQ",
+        "description": "Reprocess all webhook deliveries in DLQ",
+        "operationId": "reprocessDlq",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Reprocessing initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer",
+                      "description": "Number of deliveries queued"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/admin/shipments/{shipment_id}/rebuild-tracking": {
+      "parameters": [
+        {
+          "name": "shipment_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Rebuild tracking",
+        "description": "Re-fetch tracking from carrier",
+        "operationId": "rebuildTracking",
+        "security": [
+          {
+            "BearerAuth": [
+              "admin"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tracking rebuilt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingEventList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key authentication"
+      },
+      "SessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session_id",
+        "description": "Dashboard session authentication"
+      }
+    },
+    "parameters": {
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Pagination cursor",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Number of items to return",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Unique key for idempotent requests",
+        "schema": {
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://api.shipaggregator.com/errors/auth-invalid",
+              "title": "Authentication Required",
+              "status": 401,
+              "detail": "Invalid or missing authentication credentials",
+              "code": "AUTH_INVALID",
+              "trace_id": "abc123"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Permission denied",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://api.shipaggregator.com/errors/forbidden",
+              "title": "Forbidden",
+              "status": 403,
+              "detail": "You do not have permission to perform this action",
+              "code": "FORBIDDEN",
+              "trace_id": "abc123"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://api.shipaggregator.com/errors/not-found",
+              "title": "Not Found",
+              "status": 404,
+              "detail": "The requested resource was not found",
+              "code": "NOT_FOUND",
+              "trace_id": "abc123"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict with current state",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://api.shipaggregator.com/errors/conflict",
+              "title": "Conflict",
+              "status": 409,
+              "detail": "The request conflicts with the current state",
+              "code": "CONFLICT",
+              "trace_id": "abc123"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationProblemDetails"
+            },
+            "example": {
+              "type": "https://api.shipaggregator.com/errors/validation-failed",
+              "title": "Validation Failed",
+              "status": 422,
+              "detail": "One or more fields failed validation",
+              "code": "VALIDATION_FAILED",
+              "trace_id": "abc123",
+              "errors": [
+                {
+                  "field": "origin.phone",
+                  "message": "Invalid phone number format"
+                },
+                {
+                  "field": "parcel.weight_grams",
+                  "message": "Must be greater than 0"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "trace_id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "AUTH_INVALID",
+              "FORBIDDEN",
+              "RATE_LIMITED",
+              "VALIDATION_FAILED",
+              "NOT_FOUND",
+              "CONFLICT",
+              "PROVIDER_DOWN",
+              "PROVIDER_REJECTED",
+              "INSUFFICIENT_BALANCE",
+              "IDEMPOTENCY_REPLAYED",
+              "COD_NOT_SUPPORTED",
+              "PROVIDER_CAPABILITY_MISSING",
+              "QUOTE_EXPIRED"
+            ]
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "properties": {
+          "next_cursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Money": {
+        "type": "string",
+        "pattern": "^\\d+\\.\\d{2}$",
+        "description": "Decimal string with 2 decimal places",
+        "example": "123.45"
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "session_token": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "member": {
+            "$ref": "#/components/schemas/Member"
+          }
+        }
+      },
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "member": {
+            "$ref": "#/components/schemas/Member"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/Organization"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "billing_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "settings": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended",
+              "closed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrganizationUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "billing_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "settings": {
+            "type": "object"
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "invited",
+              "active",
+              "suspended",
+              "removed"
+            ]
+          },
+          "invited_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_login_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "MemberList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MemberInvite": {
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "role_id"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MemberUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          }
+        }
+      },
+      "Role": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_system": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoleList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          }
+        }
+      },
+      "RoleCreate": {
+        "type": "object",
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoleUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "key_prefix": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rate_limit_per_minute": {
+            "type": "integer"
+          },
+          "ip_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiKeyWithSecret": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiKey"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "Only returned once at creation/rotation"
+              }
+            }
+          }
+        ]
+      },
+      "ApiKeyList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ApiKey"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ApiKeyCreate": {
+        "type": "object",
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "default": 100
+          },
+          "ip_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiKeyUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rate_limit_per_minute": {
+            "type": "integer"
+          },
+          "ip_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "City": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CityList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/City"
+            }
+          }
+        }
+      },
+      "District": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "city_code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "DistrictList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/District"
+            }
+          }
+        }
+      },
+      "Neighborhood": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "district_code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NeighborhoodList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Neighborhood"
+            }
+          }
+        }
+      },
+      "PostalCode": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "district_code": {
+            "type": "string"
+          }
+        }
+      },
+      "PostalCodeList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostalCode"
+            }
+          }
+        }
+      },
+      "AddressInput": {
+        "type": "object",
+        "required": [
+          "contact_name",
+          "phone",
+          "street_line_1",
+          "neighborhood_code",
+          "district_code",
+          "city_code"
+        ],
+        "properties": {
+          "contact_name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "company_name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+90[0-9]{10}$",
+            "description": "E.164 format Turkish phone"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "street_line_1": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "street_line_2": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "neighborhood_code": {
+            "type": "string"
+          },
+          "district_code": {
+            "type": "string"
+          },
+          "city_code": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          }
+        }
+      },
+      "Address": {
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": "string",
+                "nullable": true
+              },
+              "is_default_sender": {
+                "type": "boolean"
+              },
+              "is_default_recipient": {
+                "type": "boolean"
+              },
+              "city_name": {
+                "type": "string"
+              },
+              "district_name": {
+                "type": "string"
+              },
+              "neighborhood_name": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/AddressInput"
+          }
+        ]
+      },
+      "AddressList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AddressCreate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "is_default_sender": {
+                "type": "boolean",
+                "default": false
+              },
+              "is_default_recipient": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        ]
+      },
+      "AddressUpdate": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "contact_name": {
+            "type": "string"
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "street_line_1": {
+            "type": "string"
+          },
+          "street_line_2": {
+            "type": "string"
+          },
+          "neighborhood_code": {
+            "type": "string"
+          },
+          "district_code": {
+            "type": "string"
+          },
+          "city_code": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "is_default_sender": {
+            "type": "boolean"
+          },
+          "is_default_recipient": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Provider": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "logo_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "website": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "support_email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "support_phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProviderCapabilities"
+          }
+        }
+      },
+      "ProviderCapabilities": {
+        "type": "object",
+        "properties": {
+          "supports_cod": {
+            "type": "boolean"
+          },
+          "supports_insurance": {
+            "type": "boolean"
+          },
+          "supports_return": {
+            "type": "boolean"
+          },
+          "supports_pickup_scheduling": {
+            "type": "boolean"
+          },
+          "supports_tracking_webhook": {
+            "type": "boolean"
+          },
+          "supports_tracking_poll": {
+            "type": "boolean"
+          },
+          "label_formats": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pdf",
+                "zpl",
+                "png"
+              ]
+            }
+          },
+          "max_weight_grams": {
+            "type": "integer"
+          },
+          "max_length_cm": {
+            "type": "integer"
+          },
+          "max_width_cm": {
+            "type": "integer"
+          },
+          "max_height_cm": {
+            "type": "integer"
+          }
+        }
+      },
+      "ProviderList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        }
+      },
+      "ProviderService": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "service_code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimated_days_min": {
+            "type": "integer"
+          },
+          "estimated_days_max": {
+            "type": "integer"
+          },
+          "supports_cod": {
+            "type": "boolean"
+          },
+          "supports_insurance": {
+            "type": "boolean"
+          },
+          "supports_return": {
+            "type": "boolean"
+          },
+          "max_weight_grams": {
+            "type": "integer"
+          },
+          "label_formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProviderServiceList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderService"
+            }
+          }
+        }
+      },
+      "DropoffPoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "city_code": {
+            "type": "string"
+          },
+          "district_code": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "working_hours": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "DropoffPointList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DropoffPoint"
+            }
+          }
+        }
+      },
+      "ProviderAccount": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_verification",
+              "verified",
+              "verification_failed",
+              "suspended"
+            ]
+          },
+          "verification_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderAccountList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProviderAccount"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ProviderAccountCreate": {
+        "type": "object",
+        "required": [
+          "provider_code",
+          "name",
+          "credentials"
+        ],
+        "properties": {
+          "provider_code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "credentials": {
+            "type": "object",
+            "description": "Provider-specific credentials"
+          },
+          "is_default": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ProviderAccountUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "credentials": {
+            "type": "object"
+          },
+          "is_default": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProviderAccountVerification": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "verification_failed"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "Parcel": {
+        "type": "object",
+        "required": [
+          "weight_grams",
+          "length_cm",
+          "width_cm",
+          "height_cm"
+        ],
+        "properties": {
+          "weight_grams": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 150000
+          },
+          "length_cm": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "width_cm": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "height_cm": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "QuoteCreate": {
+        "type": "object",
+        "required": [
+          "origin",
+          "destination",
+          "parcel"
+        ],
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "parcel": {
+            "$ref": "#/components/schemas/Parcel"
+          },
+          "cod_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "declared_value": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "use_byoa": {
+            "type": "boolean",
+            "default": false
+          },
+          "provider_account_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "Quote": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "parcel": {
+            "$ref": "#/components/schemas/Parcel"
+          },
+          "cod_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "declared_value": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "use_byoa": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed",
+              "expired"
+            ]
+          },
+          "offers_count": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PriceBreakdown": {
+        "type": "object",
+        "properties": {
+          "base_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "fuel_surcharge": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "cod_fee": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "insurance_fee": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "other_fees": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "vat": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "service_code": {
+            "type": "string"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "provider_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "is_marketplace": {
+            "type": "boolean"
+          },
+          "price": {
+            "$ref": "#/components/schemas/PriceBreakdown"
+          },
+          "estimated_days_min": {
+            "type": "integer"
+          },
+          "estimated_days_max": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OfferList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            }
+          }
+        }
+      },
+      "ShipmentCreate": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Create from offer"
+          },
+          "provider_code": {
+            "type": "string",
+            "description": "Direct creation"
+          },
+          "service_code": {
+            "type": "string"
+          },
+          "provider_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "parcel": {
+            "$ref": "#/components/schemas/Parcel"
+          },
+          "cod_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "declared_value": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "Shipment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "service_code": {
+            "type": "string"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "provider_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "is_marketplace": {
+            "type": "boolean"
+          },
+          "provider_shipment_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "provider_tracking_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "origin": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "parcel": {
+            "$ref": "#/components/schemas/Parcel"
+          },
+          "cod_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "label_purchased",
+              "pickup_scheduled",
+              "picked_up",
+              "in_transit",
+              "at_hub",
+              "out_for_delivery",
+              "delivered",
+              "delivery_failed",
+              "returning",
+              "returned_to_sender",
+              "cancelled",
+              "exception"
+            ]
+          },
+          "label_document_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "label_format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "zpl",
+              "png"
+            ],
+            "nullable": true
+          },
+          "price_charged": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "pickup_scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "return_shipment_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "original_shipment_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ShipmentList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ShipmentUpdate": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "PurchaseLabelRequest": {
+        "type": "object",
+        "properties": {
+          "label_format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "zpl",
+              "png"
+            ],
+            "default": "pdf"
+          }
+        }
+      },
+      "CancelShipmentRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "SchedulePickupRequest": {
+        "type": "object",
+        "required": [
+          "pickup_date"
+        ],
+        "properties": {
+          "pickup_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "preferred_time_from": {
+            "type": "string",
+            "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "preferred_time_to": {
+            "type": "string",
+            "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "CreateReturnRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "pickup_address": {
+            "$ref": "#/components/schemas/AddressInput"
+          }
+        }
+      },
+      "TrackingEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status_code": {
+            "type": "string",
+            "enum": [
+              "created",
+              "label_generated",
+              "picked_up",
+              "in_transit",
+              "at_hub",
+              "out_for_delivery",
+              "delivered",
+              "delivery_attempted",
+              "delivery_failed",
+              "returning",
+              "returned_to_sender",
+              "cancelled",
+              "exception"
+            ]
+          },
+          "status_description": {
+            "type": "string"
+          },
+          "location_city": {
+            "type": "string",
+            "nullable": true
+          },
+          "location_detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "poll",
+              "manual"
+            ]
+          }
+        }
+      },
+      "TrackingEventList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackingEvent"
+            }
+          }
+        }
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookEndpointWithSecret": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookEndpoint"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "HMAC secret (only shown once)"
+              }
+            }
+          }
+        ]
+      },
+      "WebhookEndpointList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            }
+          }
+        }
+      },
+      "WebhookEndpointCreate": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookEndpointUpdate": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "description": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "regenerate_secret": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WebhookTestResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "response_status": {
+            "type": "integer",
+            "nullable": true
+          },
+          "response_time_ms": {
+            "type": "integer",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "WebhookSubscription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endpoint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookSubscriptionList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookSubscription"
+            }
+          }
+        }
+      },
+      "WebhookSubscriptionCreate": {
+        "type": "object",
+        "required": [
+          "endpoint_id",
+          "event_type"
+        ],
+        "properties": {
+          "endpoint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "shipment.created",
+              "shipment.status_changed",
+              "shipment.delivered",
+              "shipment.delivery_failed",
+              "shipment.cancelled",
+              "billing.topup_completed",
+              "billing.balance_low"
+            ]
+          }
+        }
+      },
+      "WebhookSubscriptionUpdate": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "endpoint_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed",
+              "dlq"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "next_retry_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "response_status": {
+            "type": "integer",
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookDeliveryList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "WalletBalance": {
+        "type": "object",
+        "properties": {
+          "balance": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "type": "string",
+            "default": "TRY"
+          },
+          "last_transaction_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "LedgerEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entry_type": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "debit"
+            ]
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "balance_after": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "reference_type": {
+            "type": "string"
+          },
+          "reference_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LedgerEntryList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LedgerEntry"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "TopupCreate": {
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "return_url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "Topup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "payment_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TopupList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Topup"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "TopupConfirm": {
+        "type": "object",
+        "properties": {
+          "payment_token": {
+            "type": "string"
+          }
+        }
+      },
+      "RefundCreate": {
+        "type": "object",
+        "required": [
+          "ledger_entry_id",
+          "reason"
+        ],
+        "properties": {
+          "ledger_entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Partial refund amount (defaults to full)"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "Refund": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "original_ledger_entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "completed",
+              "rejected"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "topup",
+              "shipment",
+              "refund",
+              "cod_settlement"
+            ]
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "debit"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "reference_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TransactionList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "CodSettlement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shipment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "expected_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "actual_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "collected",
+              "settled",
+              "disputed",
+              "written_off"
+            ]
+          },
+          "carrier_settlement_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "discrepancy": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "settled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CodSettlementList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CodSettlement"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "CodReconcileRequest": {
+        "type": "object",
+        "required": [
+          "provider_code",
+          "settlements"
+        ],
+        "properties": {
+          "provider_code": {
+            "type": "string"
+          },
+          "settlement_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "settlements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "carrier_settlement_id": {
+                  "type": "string"
+                },
+                "tracking_number": {
+                  "type": "string"
+                },
+                "amount": {
+                  "$ref": "#/components/schemas/Money"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CodReconcileResult": {
+        "type": "object",
+        "properties": {
+          "matched": {
+            "type": "integer"
+          },
+          "unmatched": {
+            "type": "integer"
+          },
+          "discrepancies": {
+            "type": "integer"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tracking_number": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "matched",
+                    "unmatched",
+                    "discrepancy"
+                  ]
+                },
+                "expected_amount": {
+                  "$ref": "#/components/schemas/Money"
+                },
+                "actual_amount": {
+                  "$ref": "#/components/schemas/Money"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AuditLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actor_type": {
+            "type": "string",
+            "enum": [
+              "member",
+              "api_key",
+              "system",
+              "provider"
+            ]
+          },
+          "actor_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "action": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "ip_address": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditLogList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ProviderLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_code": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "request_method": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "error_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderLogList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProviderLog"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ProviderHealth": {
+        "type": "object",
+        "properties": {
+          "provider_code": {
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "down"
+            ]
+          },
+          "total_calls": {
+            "type": "integer"
+          },
+          "success_rate": {
+            "type": "number"
+          },
+          "avg_latency_ms": {
+            "type": "number"
+          },
+          "p95_latency_ms": {
+            "type": "number"
+          },
+          "last_success_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ProviderHealthList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderHealth"
+            }
+          }
+        }
+      }
+    }
+  }
+}

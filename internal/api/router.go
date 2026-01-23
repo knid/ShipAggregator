@@ -2,6 +2,7 @@
 package api
 
 import (
+	_ "embed"
 	"net/http"
 	"time"
 
@@ -26,6 +27,9 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/service/tracking"
 	"github.com/e-port/shipping-aggregator/internal/service/webhook"
 )
+
+//go:embed openapi.json
+var openAPISpec []byte
 
 // RouterConfig holds configuration for the API router.
 type RouterConfig struct {
@@ -315,6 +319,14 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		// Health endpoint within v1 (for versioned health checks)
 		r.Get("/health", healthHandler.Ready)
 
+		// OpenAPI spec endpoint (T217)
+		r.Get("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.WriteHeader(http.StatusOK)
+			w.Write(openAPISpec)
+		})
+
 		// Quotes routes (US1: Multi-carrier rate shopping)
 		r.Route("/quotes", func(r chi.Router) {
 			r.Use(middleware.RequireScope("quotes:read"))
@@ -408,6 +420,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			r.Use(middleware.RequireScope("billing:read"))
 			if billingHandler != nil {
 				r.Get("/balance", billingHandler.GetBalance)
+				r.Get("/transactions", billingHandler.GetTransactions) // T218: Combined transactions view
 				r.Get("/ledger", billingHandler.GetLedger)
 				r.Get("/ledger/summary", billingHandler.GetLedgerSummary)
 				r.Get("/ledger/{id}", billingHandler.GetLedgerEntry)
@@ -454,6 +467,12 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			if providerAccountHandler != nil {
 				r.Get("/{provider_code}/credential-schema", providerAccountHandler.GetCredentialSchema)
 			}
+
+			// Dropoff points endpoint (T219)
+			if cfg.Queries != nil {
+				providerHandler := handler.NewProviderHandler(cfg.Queries, cfg.Logger)
+				r.Get("/{code}/dropoff-points", providerHandler.GetDropoffPoints)
+			}
 		})
 
 		// Provider Accounts routes (US2: Bring Your Own Account)
@@ -477,6 +496,19 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Get("/cities", referenceHandler.ListCities)
 			// r.Get("/cities/{cityCode}/districts", referenceHandler.ListDistricts)
 			// r.Get("/districts/{districtCode}/neighborhoods", referenceHandler.ListNeighborhoods)
+		})
+
+		// Roles routes (T220)
+		r.Route("/roles", func(r chi.Router) {
+			r.Use(middleware.RequireScope("organization:read"))
+			if cfg.Queries != nil {
+				roleHandler := handler.NewRoleHandler(cfg.Queries, cfg.Logger)
+				r.Get("/", roleHandler.ListRoles)
+				r.With(middleware.RequireScope("organization:write")).Post("/", roleHandler.CreateRole)
+				r.Get("/{id}", roleHandler.GetRole)
+				r.With(middleware.RequireScope("organization:write")).Put("/{id}", roleHandler.UpdateRole)
+				r.With(middleware.RequireScope("organization:write")).Delete("/{id}", roleHandler.DeleteRole)
+			}
 		})
 
 		// Admin routes (US10: Admin Tools)
