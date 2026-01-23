@@ -20,7 +20,9 @@ import (
 	"github.com/knid/kargonet/internal/api/handler"
 	"github.com/knid/kargonet/internal/config"
 	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
+	"github.com/knid/kargonet/internal/service/auth"
 
 	// Import all provider adapters to register them with the global factory.
 	// This ensures all implemented carrier adapters are available for use.
@@ -133,14 +135,29 @@ func run() error {
 		logger.Info("redis connection established")
 	}
 
+	// Initialize database queries
+	queries := db.New(dbPool)
+	logger.Info("database queries initialized")
+
+	// Initialize session service for authentication
+	sessionService := auth.NewSessionService(queries)
+	logger.Info("session service initialized")
+
+	// Initialize session validator adapter for middleware
+	sessionValidator := auth.NewSessionValidatorAdapter(queries)
+	logger.Info("session validator initialized")
+
 	// Create router configuration
 	routerCfg := api.RouterConfig{
 		Logger:             logger,
 		Metrics:            metrics,
 		Tracer:             tracer,
 		DBPool:             dbPool,
+		Queries:            queries,
 		RedisCache:         redisCache,
 		RateLimiter:        rateLimiter,
+		SessionService:     sessionService,
+		SessionValidator:   sessionValidator,
 		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
 		RateLimitPerMinute: cfg.RateLimit.RequestsPerSecond * 60,
 		IdempotencyTTL:     cfg.Idempotency.TTL,

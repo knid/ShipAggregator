@@ -228,7 +228,19 @@ func authenticateToken(ctx context.Context, token string, r *http.Request, cfg A
 		return authenticateSession(ctx, token, r, cfg)
 	}
 
-	// Unknown token format
+	// For unprefixed tokens, try session authentication first (dashboard tokens)
+	// This supports the current session token format which doesn't have a prefix
+	if cfg.SessionValidator != nil {
+		authInfo, err := authenticateSession(ctx, token, r, cfg)
+		if err == nil {
+			return authInfo, nil
+		}
+		// If session auth fails, don't try API key auth for unprefixed tokens
+		// as API keys always have the sk_ prefix
+		return nil, err
+	}
+
+	// Unknown token format and no session validator configured
 	return nil, domain.ErrUnauthorized
 }
 
