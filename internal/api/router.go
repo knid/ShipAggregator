@@ -379,7 +379,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
-		// Billing routes (US3: COD Settlements, US4: Wallet Top-Up)
+		// Billing routes (US3: COD Settlements, US4: Wallet Top-Up, US7: Refunds)
 		r.Route("/billing", func(r chi.Router) {
 			r.Use(middleware.RequireScope("billing:read"))
 			if billingHandler != nil {
@@ -407,6 +407,14 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					r.Get("/{id}", billingHandler.GetTopup)
 					r.With(middleware.RequireScope("billing:write")).Post("/{id}/confirm", billingHandler.ConfirmTopup)
 					r.With(middleware.RequireScope("billing:write")).Post("/{id}/cancel", billingHandler.CancelTopup)
+				})
+
+				// Refund routes (US7: Shipment Cancellation & Refund)
+				r.Route("/refunds", func(r chi.Router) {
+					r.Get("/", billingHandler.ListRefunds)
+					r.Get("/summary", billingHandler.GetRefundSummary)
+					r.Get("/shipment/{shipment_id}", billingHandler.GetRefundByShipment)
+					r.Get("/{id}", billingHandler.GetRefund)
 				})
 			}
 		})

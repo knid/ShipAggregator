@@ -325,11 +325,11 @@
 
 ### Implementation for User Story 7
 
-- [ ] T170 [P] [US7] Update internal/service/shipment/service.go with Cancel operation and carrier API call
-- [ ] T171 [US7] Implement internal/service/billing/refund.go with refund processing and ledger credit
-- [ ] T172 [US7] Implement POST /shipments/{id}/cancel endpoint in internal/api/handler/shipment.go
-- [ ] T173 [US7] Implement POST /billing/refunds endpoint in internal/api/handler/billing.go
-- [ ] T174 [US7] Register routes for US7 endpoints in internal/api/router.go
+- [X] T170 [P] [US7] Update internal/service/shipment/service.go with Cancel operation and carrier API call
+- [X] T171 [US7] Implement internal/service/billing/refund.go with refund processing and ledger credit
+- [X] T172 [US7] Implement POST /shipments/{id}/cancel endpoint in internal/api/handler/shipment.go
+- [X] T173 [US7] Implement POST /billing/refunds endpoint in internal/api/handler/billing.go
+- [X] T174 [US7] Register routes for US7 endpoints in internal/api/router.go
 
 **Checkpoint**: Shipment cancellation and refunds functional
 

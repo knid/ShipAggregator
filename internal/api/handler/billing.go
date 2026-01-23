@@ -23,6 +23,7 @@ type BillingHandler struct {
 	ledgerService *billing.LedgerService
 	codService    *billing.CODService
 	topupService  *billing.TopupService
+	refundService *billing.RefundService
 	logger        *observability.Logger
 }
 
@@ -58,6 +59,25 @@ func NewBillingHandlerFull(
 		ledgerService: ledgerService,
 		codService:    codService,
 		topupService:  topupService,
+		logger:        logger,
+	}
+}
+
+// NewBillingHandlerComplete creates a new billing handler with all services including refunds.
+func NewBillingHandlerComplete(
+	walletService *billing.WalletService,
+	ledgerService *billing.LedgerService,
+	codService *billing.CODService,
+	topupService *billing.TopupService,
+	refundService *billing.RefundService,
+	logger *observability.Logger,
+) *BillingHandler {
+	return &BillingHandler{
+		walletService: walletService,
+		ledgerService: ledgerService,
+		codService:    codService,
+		topupService:  topupService,
+		refundService: refundService,
 		logger:        logger,
 	}
 }
@@ -1214,6 +1234,274 @@ func topupToResponse(topup *billing.Topup) TopupResponse {
 
 	if topup.CompletedAt != nil {
 		completedAt := topup.CompletedAt.Format(time.RFC3339)
+		resp.CompletedAt = &completedAt
+	}
+
+	return resp
+}
+
+// Refund Endpoints (US7: Shipment Cancellation & Refund)
+
+// ListRefunds handles GET /billing/refunds
+// Returns refunds for the organization.
+func (h *BillingHandler) ListRefunds(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if refund service is available
+	if h.refundService == nil {
+		WriteError(w, r, NewInternalError("Refund service not available"))
+		return
+	}
+
+	// Parse query parameters
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var status *string
+	if s := r.URL.Query().Get("status"); s != "" {
+		status = &s
+	}
+
+	var referenceType *string
+	if rt := r.URL.Query().Get("reference_type"); rt != "" {
+		referenceType = &rt
+	}
+
+	var createdAfter *time.Time
+	if ca := r.URL.Query().Get("created_after"); ca != "" {
+		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+			createdAfter = &t
+		}
+	}
+
+	var createdBefore *time.Time
+	if cb := r.URL.Query().Get("created_before"); cb != "" {
+		if t, err := time.Parse(time.RFC3339, cb); err == nil {
+			createdBefore = &t
+		}
+	}
+
+	// Get refunds
+	result, err := h.refundService.List(ctx, &billing.ListRefundsRequest{
+		OrganizationID: orgID,
+		Status:         status,
+		ReferenceType:  referenceType,
+		CreatedAfter:   createdAfter,
+		CreatedBefore:  createdBefore,
+		Offset:         offset,
+		Limit:          limit,
+	})
+	if err != nil {
+		h.logger.Error("Failed to list refunds", "error", err, "org_id", orgID)
+		WriteError(w, r, NewInternalError("Failed to list refunds"))
+		return
+	}
+
+	response := make([]RefundResponse, len(result.Refunds))
+	for i, refund := range result.Refunds {
+		response[i] = refundToResponse(refund)
+	}
+
+	writeJSON(w, http.StatusOK, PaginatedResponse{
+		Data:   response,
+		Total:  result.Total,
+		Offset: offset,
+		Limit:  limit,
+	})
+}
+
+// GetRefund handles GET /billing/refunds/{id}
+// Returns a specific refund.
+func (h *BillingHandler) GetRefund(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if refund service is available
+	if h.refundService == nil {
+		WriteError(w, r, NewInternalError("Refund service not available"))
+		return
+	}
+
+	// Get refund ID from URL
+	refundIDStr := chi.URLParam(r, "id")
+	refundID, err := uuid.Parse(refundIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid refund ID"))
+		return
+	}
+
+	// Get refund
+	refund, err := h.refundService.Get(ctx, refundID, orgID)
+	if err != nil {
+		if errors.Is(err, billing.ErrRefundNotFound) {
+			WriteError(w, r, NewNotFoundError("Refund"))
+			return
+		}
+		h.logger.Error("Failed to get refund", "error", err, "refund_id", refundID)
+		WriteError(w, r, NewInternalError("Failed to get refund"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, refundToResponse(refund))
+}
+
+// GetRefundByShipment handles GET /billing/refunds/shipment/{shipment_id}
+// Returns the refund for a specific shipment.
+func (h *BillingHandler) GetRefundByShipment(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if refund service is available
+	if h.refundService == nil {
+		WriteError(w, r, NewInternalError("Refund service not available"))
+		return
+	}
+
+	// Get shipment ID from URL
+	shipmentIDStr := chi.URLParam(r, "shipment_id")
+	shipmentID, err := uuid.Parse(shipmentIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid shipment ID"))
+		return
+	}
+
+	// Get refund by shipment
+	refund, err := h.refundService.GetByShipmentID(ctx, shipmentID)
+	if err != nil {
+		if errors.Is(err, billing.ErrRefundNotFound) {
+			WriteError(w, r, NewNotFoundError("Refund"))
+			return
+		}
+		h.logger.Error("Failed to get refund by shipment", "error", err, "shipment_id", shipmentID)
+		WriteError(w, r, NewInternalError("Failed to get refund"))
+		return
+	}
+
+	// Verify organization ownership
+	if refund.OrganizationID != orgID {
+		WriteError(w, r, NewNotFoundError("Refund"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, refundToResponse(refund))
+}
+
+// GetRefundSummary handles GET /billing/refunds/summary
+// Returns a summary of refunds for the organization.
+func (h *BillingHandler) GetRefundSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Check if refund service is available
+	if h.refundService == nil {
+		WriteError(w, r, NewInternalError("Refund service not available"))
+		return
+	}
+
+	// Get summary
+	summary, err := h.refundService.GetSummary(ctx, orgID)
+	if err != nil {
+		h.logger.Error("Failed to get refund summary", "error", err, "org_id", orgID)
+		WriteError(w, r, NewInternalError("Failed to get refund summary"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, RefundSummaryResponse{
+		OrganizationID:   summary.OrganizationID,
+		TotalRefunds:     summary.TotalRefunds,
+		TotalAmountKurus: summary.TotalAmountKurus,
+		PendingCount:     summary.PendingCount,
+		CompletedCount:   summary.CompletedCount,
+	})
+}
+
+// Refund Response Types
+
+// RefundResponse represents a refund in API responses.
+type RefundResponse struct {
+	ID                    uuid.UUID  `json:"id"`
+	OrganizationID        uuid.UUID  `json:"organization_id"`
+	OriginalLedgerEntryID *uuid.UUID `json:"original_ledger_entry_id,omitempty"`
+	RefundLedgerEntryID   *uuid.UUID `json:"refund_ledger_entry_id,omitempty"`
+	AmountKurus           int64      `json:"amount_kurus"`
+	Reason                string     `json:"reason"`
+	Status                string     `json:"status"`
+	ReferenceType         string     `json:"reference_type"`
+	ReferenceID           uuid.UUID  `json:"reference_id"`
+	ApprovedBy            *uuid.UUID `json:"approved_by,omitempty"`
+	ApprovedAt            *string    `json:"approved_at,omitempty"`
+	CompletedAt           *string    `json:"completed_at,omitempty"`
+	CreatedAt             string     `json:"created_at"`
+	UpdatedAt             string     `json:"updated_at"`
+}
+
+// RefundSummaryResponse represents a refund summary in API responses.
+type RefundSummaryResponse struct {
+	OrganizationID   uuid.UUID `json:"organization_id"`
+	TotalRefunds     int64     `json:"total_refunds"`
+	TotalAmountKurus int64     `json:"total_amount_kurus"`
+	PendingCount     int64     `json:"pending_count"`
+	CompletedCount   int64     `json:"completed_count"`
+}
+
+// Conversion helper for refunds
+func refundToResponse(refund *billing.Refund) RefundResponse {
+	resp := RefundResponse{
+		ID:                  refund.ID,
+		OrganizationID:      refund.OrganizationID,
+		RefundLedgerEntryID: refund.RefundLedgerEntryID,
+		AmountKurus:         refund.AmountKurus,
+		Reason:              refund.Reason,
+		Status:              refund.Status,
+		ReferenceType:       refund.ReferenceType,
+		ReferenceID:         refund.ReferenceID,
+		ApprovedBy:          refund.ApprovedBy,
+		CreatedAt:           refund.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:           refund.UpdatedAt.Format(time.RFC3339),
+	}
+
+	if refund.OriginalLedgerEntryID != uuid.Nil {
+		resp.OriginalLedgerEntryID = &refund.OriginalLedgerEntryID
+	}
+
+	if refund.ApprovedAt != nil {
+		approvedAt := refund.ApprovedAt.Format(time.RFC3339)
+		resp.ApprovedAt = &approvedAt
+	}
+
+	if refund.CompletedAt != nil {
+		completedAt := refund.CompletedAt.Format(time.RFC3339)
 		resp.CompletedAt = &completedAt
 	}
 
