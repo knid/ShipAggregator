@@ -36,6 +36,7 @@ VALUES (
         "addresses:create",
         "addresses:update",
         "addresses:delete",
+        "providers:read",
         "provider_accounts:read",
         "provider_accounts:create",
         "provider_accounts:update",
@@ -94,6 +95,7 @@ VALUES (
         "addresses:create",
         "addresses:update",
         "addresses:delete",
+        "providers:read",
         "provider_accounts:read",
         "provider_accounts:create",
         "provider_accounts:update",
@@ -136,6 +138,7 @@ VALUES (
         "addresses:read",
         "addresses:create",
         "addresses:update",
+        "providers:read",
         "provider_accounts:read",
         "quotes:read",
         "quotes:create",
@@ -166,6 +169,7 @@ VALUES (
         "roles:read",
         "api_keys:read",
         "addresses:read",
+        "providers:read",
         "provider_accounts:read",
         "quotes:read",
         "shipments:read",
@@ -209,6 +213,9 @@ VALUES (
 --   addresses:create  - Create addresses
 --   addresses:update  - Update addresses
 --   addresses:delete  - Delete addresses
+--
+-- Provider Permissions:
+--   providers:read  - View available shipping providers and services
 --
 -- Provider Account Permissions:
 --   provider_accounts:read    - View BYOA accounts

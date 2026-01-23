@@ -492,19 +492,34 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		// Providers routes (reference data)
 		r.Route("/providers", func(r chi.Router) {
 			r.Use(middleware.RequireScope("providers:read"))
-			// r.Get("/", providersHandler.List)
-			// r.Get("/{providerCode}", providersHandler.Get)
-			// r.Get("/{providerCode}/services", providersHandler.ListServices)
+
+			// Initialize provider handler
+			if cfg.Queries != nil {
+				providerHandler := handler.NewProviderHandler(cfg.Queries, cfg.Logger)
+				r.Get("/", providerHandler.ListProviders)
+				r.Get("/{code}", providerHandler.GetProvider)
+				r.Get("/{code}/details", providerHandler.GetProviderWithServices)
+				r.Get("/{code}/services", providerHandler.ListProviderServices)
+				r.Get("/{code}/services/{serviceCode}", providerHandler.GetProviderService)
+				r.Get("/{code}/services/cod", providerHandler.ListProviderServicesWithCOD)
+				r.Get("/{code}/services/return", providerHandler.ListProviderServicesWithReturn)
+				r.Get("/{code}/capabilities", providerHandler.GetProviderCapabilities)
+				r.Get("/{code}/rate-plans", providerHandler.ListMarketplaceRatePlans)
+				r.Get("/{code}/dropoff-points", providerHandler.GetDropoffPoints)
+			}
 
 			// Credential schema endpoint (US2: BYOA)
 			if providerAccountHandler != nil {
 				r.Get("/{provider_code}/credential-schema", providerAccountHandler.GetCredentialSchema)
 			}
+		})
 
-			// Dropoff points endpoint (T219)
+		// Rate plans route (marketplace pricing)
+		r.Route("/rate-plans", func(r chi.Router) {
+			r.Use(middleware.RequireScope("providers:read"))
 			if cfg.Queries != nil {
 				providerHandler := handler.NewProviderHandler(cfg.Queries, cfg.Logger)
-				r.Get("/{code}/dropoff-points", providerHandler.GetDropoffPoints)
+				r.Get("/", providerHandler.ListCurrentMarketplaceRatePlans)
 			}
 		})
 
