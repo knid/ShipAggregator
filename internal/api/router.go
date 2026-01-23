@@ -166,31 +166,6 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	r.Get("/health/live", healthHandler.Live)
 	r.Get("/health/ready", healthHandler.Ready)
 
-	// Auth routes (public endpoints for login/register, authenticated for others)
-	if cfg.SessionService != nil {
-		authHandler := handler.NewAuthHandler(cfg.SessionService, cfg.Logger)
-		r.Route("/auth", func(r chi.Router) {
-			// Public endpoints (no auth required)
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
-
-			// Authenticated endpoints
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.Auth(middleware.AuthConfig{
-					APIKeyValidator:  cfg.APIKeyValidator,
-					SessionValidator: cfg.SessionValidator,
-					Logger:           cfg.Logger,
-					RequireAuth:      true,
-				}))
-				r.Post("/logout", authHandler.Logout)
-				r.Post("/logout-all", authHandler.LogoutAll)
-				r.Get("/me", authHandler.Me)
-				r.Get("/sessions", authHandler.ListSessions)
-				r.Delete("/sessions/{id}", authHandler.DeleteSession)
-			})
-		})
-	}
-
 	// Initialize handlers
 	var quoteHandler *handler.QuoteHandler
 	var shipmentHandler *handler.ShipmentHandler
@@ -304,6 +279,9 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			SkipPaths: []string{
 				"/v1/health",
 				"/v1/docs",
+				"/v1/openapi.json",
+				"/v1/auth/login",
+				"/v1/auth/register",
 			},
 		}))
 
@@ -316,6 +294,9 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			SkipPaths: []string{
 				"/v1/health",
 				"/v1/docs",
+				"/v1/openapi.json",
+				"/v1/auth/login",
+				"/v1/auth/register",
 			},
 		}))
 
@@ -340,11 +321,36 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			SkipPaths: []string{
 				"/v1/health",
 				"/v1/docs",
+				"/v1/auth/login",
+				"/v1/auth/register",
 			},
 		}))
 
 		// Health endpoint within v1 (for versioned health checks)
 		r.Get("/health", healthHandler.Ready)
+
+		// Auth routes (public endpoints for login/register, authenticated for others)
+		if cfg.SessionService != nil {
+			authHandler := handler.NewAuthHandler(cfg.SessionService, cfg.Logger)
+			r.Route("/auth", func(r chi.Router) {
+				r.Post("/register", authHandler.Register)
+				r.Post("/login", authHandler.Login)
+
+				r.Group(func(r chi.Router) {
+					/* r.Use(middleware.Auth(middleware.AuthConfig{
+						APIKeyValidator:  cfg.APIKeyValidator,
+						SessionValidator: cfg.SessionValidator,
+						Logger:           cfg.Logger,
+						RequireAuth:      true,
+					})) */
+					r.Post("/logout", authHandler.Logout)
+					r.Post("/logout-all", authHandler.LogoutAll)
+					r.Get("/me", authHandler.Me)
+					r.Get("/sessions", authHandler.ListSessions)
+					r.Delete("/sessions/{id}", authHandler.DeleteSession)
+				})
+			})
+		}
 
 		// OpenAPI spec endpoint (T217)
 		r.Get("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
