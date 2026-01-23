@@ -294,9 +294,10 @@ func initRedis(ctx context.Context, cfg *config.Config, logger *observability.Lo
 
 	// Create rate limiter
 	rateLimiter := redisrepo.NewRateLimiter(client, redisrepo.RateLimitConfig{
-		KeyPrefix:     "ratelimit:",
-		DefaultLimit:  cfg.RateLimit.RequestsPerSecond,
-		DefaultWindow: time.Second,
+		KeyPrefix:       "ratelimit:",
+		DefaultLimit:    cfg.RateLimit.RequestsPerSecond,
+		DefaultWindow:   time.Second,
+		BurstMultiplier: 1.0, // Must be set, otherwise effectiveLimit becomes 0
 	}, slog.Default())
 
 	return client, cache, rateLimiter, nil

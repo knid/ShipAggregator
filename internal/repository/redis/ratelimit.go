@@ -56,6 +56,11 @@ func NewRateLimiter(client *redis.Client, cfg RateLimitConfig, logger *slog.Logg
 		logger = slog.Default()
 	}
 
+	// Ensure BurstMultiplier is at least 1.0 to prevent zero effective limits
+	if cfg.BurstMultiplier <= 0 {
+		cfg.BurstMultiplier = 1.0
+	}
+
 	return &RateLimiter{
 		client: client,
 		config: cfg,
@@ -104,6 +109,9 @@ func (r *RateLimiter) AllowN(ctx context.Context, key string, n int, limit int, 
 	// 2. Counts current entries in the window
 	// 3. If under limit, adds new entries
 	// 4. Sets expiration on the key
+	//
+	// IMPORTANT: The score is the timestamp when the entry was added.
+	// Entries with score < window_start are expired and removed.
 	script := redis.NewScript(`
 		local key = KEYS[1]
 		local window_start = tonumber(ARGV[1])
@@ -112,24 +120,28 @@ func (r *RateLimiter) AllowN(ctx context.Context, key string, n int, limit int, 
 		local count = tonumber(ARGV[4])
 		local window_ms = tonumber(ARGV[5])
 
-		-- Remove expired entries
-		redis.call('ZREMRANGEBYSCORE', key, '-inf', window_start)
+		-- Remove expired entries (entries older than window_start)
+		local removed = redis.call('ZREMRANGEBYSCORE', key, '-inf', window_start)
 
-		-- Count current entries
+		-- Count current entries in the window
 		local current = redis.call('ZCARD', key)
+
+		-- Debug: log the state
+		-- redis.log(redis.LOG_WARNING, 'RateLimit: key=' .. key .. ' current=' .. current .. ' limit=' .. limit .. ' removed=' .. removed)
 
 		-- Check if we can add more
 		if current + count <= limit then
 			-- Add new entries with current timestamp as score
+			-- Using a unique member to allow multiple entries with same score
 			for i = 1, count do
 				redis.call('ZADD', key, now, now .. ':' .. i .. ':' .. math.random())
 			end
-			-- Set expiration
-			redis.call('PEXPIRE', key, window_ms)
-			return {1, limit - current - count, current + count}
+			-- Set expiration on the key (window duration + buffer)
+			redis.call('PEXPIRE', key, window_ms + 1000)
+			return {1, limit - current - count, current + count, removed}
 		else
-			-- Get the oldest entry to calculate retry time
-			-- We need to find when enough entries will expire to allow this request
+			-- Rate limit exceeded
+			-- Get the oldest entry to calculate when we can retry
 			local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
 			local retry_after = 1000  -- Default to 1 second minimum
 			if #oldest >= 2 then
@@ -141,7 +153,7 @@ func (r *RateLimiter) AllowN(ctx context.Context, key string, n int, limit int, 
 					retry_after = 1000
 				end
 			end
-			return {0, 0, current, retry_after}
+			return {0, 0, current, retry_after, removed}
 		end
 	`)
 
@@ -161,17 +173,50 @@ func (r *RateLimiter) AllowN(ctx context.Context, key string, n int, limit int, 
 
 	allowed := result[0].(int64) == 1
 	remaining := int(result[1].(int64))
-	_ = result[2].(int64) // current count (used for logging if needed)
+	currentCount := result[2].(int64)
 
 	var retryAfter time.Duration
-	if !allowed && len(result) > 3 {
-		retryAfterMs := result[3].(int64)
-		if retryAfterMs > 0 {
-			retryAfter = time.Duration(retryAfterMs) * time.Millisecond
+	var removedCount int64
+	if allowed {
+		// When allowed, result[3] is removed count
+		if len(result) > 3 {
+			removedCount = result[3].(int64)
+		}
+	} else {
+		// When not allowed, result[3] is retry_after, result[4] is removed count
+		if len(result) > 3 {
+			retryAfterMs := result[3].(int64)
+			if retryAfterMs > 0 {
+				retryAfter = time.Duration(retryAfterMs) * time.Millisecond
+			}
+		}
+		if len(result) > 4 {
+			removedCount = result[4].(int64)
 		}
 	}
 
 	resetAt := now.Add(window)
+
+	// Log rate limit state for debugging
+	r.logger.Debug("rate limit check",
+		slog.String("key", key),
+		slog.Bool("allowed", allowed),
+		slog.Int64("current_count", currentCount),
+		slog.Int("limit", limit),
+		slog.Int("effective_limit", effectiveLimit),
+		slog.Int("remaining", remaining),
+		slog.Int64("removed", removedCount),
+		slog.Duration("retry_after", retryAfter),
+	)
+
+	// If not allowed and current count seems wrong, log a warning
+	if !allowed && currentCount > int64(effectiveLimit)*2 {
+		r.logger.Warn("rate limit count seems abnormally high",
+			slog.String("key", key),
+			slog.Int64("current_count", currentCount),
+			slog.Int("effective_limit", effectiveLimit),
+		)
+	}
 
 	return &RateLimitResult{
 		Allowed:    allowed,
