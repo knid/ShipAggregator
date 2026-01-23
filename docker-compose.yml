@@ -92,14 +92,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgres://${DB_USER:-shipping}:${DB_PASSWORD:-shipping}@postgres:5432/${DB_NAME:-shipping}?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MINIO_USE_SSL=false
+    env_file:
+      - .env
     ports:
       - "${API_PORT:-8080}:8080"
     networks:
@@ -120,14 +114,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgres://${DB_USER:-shipping}:${DB_PASSWORD:-shipping}@postgres:5432/${DB_NAME:-shipping}?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MINIO_USE_SSL=false
+    env_file:
+      - .env
     networks:
       - shipping-network
     profiles:
