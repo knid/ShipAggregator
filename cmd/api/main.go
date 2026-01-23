@@ -20,9 +20,12 @@ import (
 	"github.com/knid/kargonet/internal/api/handler"
 	"github.com/knid/kargonet/internal/config"
 	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
 	"github.com/knid/kargonet/internal/service/auth"
+	"github.com/knid/kargonet/internal/service/billing"
+	"github.com/knid/kargonet/internal/service/shipment"
 
 	// Import all provider adapters to register them with the global factory.
 	// This ensures all implemented carrier adapters are available for use.
@@ -147,6 +150,20 @@ func run() error {
 	sessionValidator := auth.NewSessionValidatorAdapter(queries)
 	logger.Info("session validator initialized")
 
+	// Initialize provider adapter pool using the global factory
+	adapterFactory := provider.GlobalFactory()
+	adapterPool := provider.NewAdapterPool(adapterFactory, slog.Default())
+	logger.Info("provider adapter pool initialized")
+
+	// Initialize billing services
+	walletService := billing.NewWalletService(queries, logger)
+	ledgerService := billing.NewLedgerService(queries, logger)
+	logger.Info("billing services initialized")
+
+	// Initialize shipment service
+	shipmentService := shipment.NewService(queries, adapterPool, ledgerService, walletService, logger)
+	logger.Info("shipment service initialized")
+
 	// Create router configuration
 	routerCfg := api.RouterConfig{
 		Logger:             logger,
@@ -158,6 +175,9 @@ func run() error {
 		RateLimiter:        rateLimiter,
 		SessionService:     sessionService,
 		SessionValidator:   sessionValidator,
+		ShipmentService:    shipmentService,
+		WalletService:      walletService,
+		LedgerService:      ledgerService,
 		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
 		RateLimitPerMinute: cfg.RateLimit.RequestsPerSecond * 60,
 		IdempotencyTTL:     cfg.Idempotency.TTL,
