@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -187,10 +188,30 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 
 		// Check for retryable status codes
 		if c.isRetryableStatus(resp.StatusCode) {
-			lastErr = &provider.ProviderError{
-				Code:      "HTTP_ERROR",
-				Message:   fmt.Sprintf("HTTP %d", resp.StatusCode),
-				Retryable: true,
+			// For rate limit errors, check Retry-After header
+			if resp.StatusCode == 429 {
+				retryAfter := c.parseRetryAfter(resp)
+				lastErr = &provider.ProviderError{
+					Code:       "PROVIDER_RATE_LIMITED",
+					Message:    fmt.Sprintf("Rate limited by provider. Retry after %v", retryAfter),
+					Retryable:  true,
+					RetryAfter: retryAfter,
+				}
+				// If we have a specific retry-after, wait that duration instead of backoff
+				if retryAfter > 0 {
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(retryAfter):
+					}
+					continue
+				}
+			} else {
+				lastErr = &provider.ProviderError{
+					Code:      "HTTP_ERROR",
+					Message:   fmt.Sprintf("HTTP %d", resp.StatusCode),
+					Retryable: true,
+				}
 			}
 			continue
 		}
@@ -486,6 +507,52 @@ func (c *Client) isRetryable(err error) bool {
 // isRetryableStatus checks if an HTTP status code is retryable.
 func (c *Client) isRetryableStatus(status int) bool {
 	return status == 429 || status >= 500
+}
+
+// parseRetryAfter parses the Retry-After header or response body for rate limit info.
+// It supports both the standard Retry-After header and JSON body with retry_after field.
+func (c *Client) parseRetryAfter(resp *Response) time.Duration {
+	// First, try the standard Retry-After header
+	if retryAfterHeader := resp.Headers.Get("Retry-After"); retryAfterHeader != "" {
+		// Try parsing as seconds (integer)
+		if seconds, err := strconv.Atoi(retryAfterHeader); err == nil {
+			if seconds > 0 {
+				return time.Duration(seconds) * time.Second
+			}
+		}
+		// Try parsing as HTTP-date (RFC 7231)
+		if t, err := http.ParseTime(retryAfterHeader); err == nil {
+			duration := time.Until(t)
+			if duration > 0 {
+				return duration
+			}
+		}
+	}
+
+	// Try parsing from JSON response body (common in REST APIs)
+	if len(resp.Body) > 0 {
+		var rateLimitResp struct {
+			RetryAfter int   `json:"retry_after"`
+			ResetAt    int64 `json:"reset_at"`
+		}
+		if err := json.Unmarshal(resp.Body, &rateLimitResp); err == nil {
+			// Check retry_after field (seconds)
+			if rateLimitResp.RetryAfter > 0 {
+				return time.Duration(rateLimitResp.RetryAfter) * time.Second
+			}
+			// Check reset_at field (Unix timestamp)
+			if rateLimitResp.ResetAt > 0 {
+				resetTime := time.Unix(rateLimitResp.ResetAt, 0)
+				duration := time.Until(resetTime)
+				if duration > 0 {
+					return duration
+				}
+			}
+		}
+	}
+
+	// Default: use minimum backoff delay
+	return c.config.RetryBaseDelay
 }
 
 // mapHTTPError maps HTTP errors to provider errors.

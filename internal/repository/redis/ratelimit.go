@@ -129,10 +129,17 @@ func (r *RateLimiter) AllowN(ctx context.Context, key string, n int, limit int, 
 			return {1, limit - current - count, current + count}
 		else
 			-- Get the oldest entry to calculate retry time
+			-- We need to find when enough entries will expire to allow this request
 			local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
-			local retry_after = 0
+			local retry_after = 1000  -- Default to 1 second minimum
 			if #oldest >= 2 then
-				retry_after = tonumber(oldest[2]) + window_ms - now
+				local oldest_timestamp = tonumber(oldest[2])
+				local expire_time = oldest_timestamp + window_ms
+				retry_after = expire_time - now
+				-- Ensure retry_after is at least 1 second (1000ms) to prevent tight loops
+				if retry_after < 1000 then
+					retry_after = 1000
+				end
 			end
 			return {0, 0, current, retry_after}
 		end

@@ -51,6 +51,8 @@ type ProviderError struct {
 	ProviderMessage string `json:"provider_message,omitempty"`
 	// Retryable indicates if the error is retryable.
 	Retryable bool `json:"retryable"`
+	// RetryAfter is the duration to wait before retrying (for rate limit errors).
+	RetryAfter time.Duration `json:"retry_after,omitempty"`
 	// Cause is the underlying error.
 	Cause error `json:"-"`
 }
