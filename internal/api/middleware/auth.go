@@ -551,7 +551,7 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, code, detail string,
 	traceID := GetTraceID(r.Context())
 
 	// Simple JSON response - full RFC 7807 implementation is in handler/errors.go
-	response := `{"type":"https://api.shipaggregator.com/errors/` + strings.ToLower(strings.ReplaceAll(code, "_", "-")) + `","title":"` + getErrorTitle(code) + `","status":` + strconv.Itoa(status) + `,"detail":"` + detail + `","code":"` + code + `","trace_id":"` + traceID + `"}`
+	response := `{"type":"https://api.kargonet.com/errors/` + strings.ToLower(strings.ReplaceAll(code, "_", "-")) + `","title":"` + getErrorTitle(code) + `","status":` + strconv.Itoa(status) + `,"detail":"` + detail + `","code":"` + code + `","trace_id":"` + traceID + `"}`
 	_, _ = w.Write([]byte(response))
 }
 

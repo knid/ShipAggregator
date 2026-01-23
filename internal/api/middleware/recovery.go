@@ -132,7 +132,7 @@ func writePanicError(w http.ResponseWriter, r *http.Request, err interface{}) {
 	requestID := GetRequestID(r.Context())
 
 	problem := map[string]interface{}{
-		"type":       "https://api.shipaggregator.com/errors/internal-error",
+		"type":       "https://api.kargonet.com/errors/internal-error",
 		"title":      "Internal Server Error",
 		"status":     http.StatusInternalServerError,
 		"detail":     "An unexpected error occurred. Please try again later.",
@@ -284,7 +284,7 @@ func WrapSafeHandler(logger *observability.Logger, handler SafeHandlerFunc) http
 				w.WriteHeader(http.StatusInternalServerError)
 
 				problem := map[string]interface{}{
-					"type":       "https://api.shipaggregator.com/errors/internal-error",
+					"type":       "https://api.kargonet.com/errors/internal-error",
 					"title":      "Internal Server Error",
 					"status":     http.StatusInternalServerError,
 					"detail":     "An error occurred while processing your request.",

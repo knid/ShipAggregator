@@ -277,7 +277,7 @@ func (h *HealthHandler) checkRedis(ctx context.Context) ComponentHealth {
 // NotFoundHandler handles 404 Not Found responses.
 func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	WriteError(w, r, &ProblemDetails{
-		Type:   "https://api.shipaggregator.com/errors/not-found",
+		Type:   "https://api.kargonet.com/errors/not-found",
 		Title:  "Not Found",
 		Status: http.StatusNotFound,
 		Detail: "The requested resource was not found",
@@ -288,7 +288,7 @@ func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 // MethodNotAllowedHandler handles 405 Method Not Allowed responses.
 func MethodNotAllowedHandler(w http.ResponseWriter, r *http.Request) {
 	WriteError(w, r, &ProblemDetails{
-		Type:   "https://api.shipaggregator.com/errors/method-not-allowed",
+		Type:   "https://api.kargonet.com/errors/method-not-allowed",
 		Title:  "Method Not Allowed",
 		Status: http.StatusMethodNotAllowed,
 		Detail: "The HTTP method is not allowed for this resource",

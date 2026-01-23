@@ -108,7 +108,7 @@ func (p *ProblemDetails) Error() string {
 
 // Common error types as URI references.
 const (
-	ErrorTypeBase = "https://api.shipaggregator.com/errors/"
+	ErrorTypeBase = "https://api.kargonet.com/errors/"
 
 	// Authentication and authorization errors
 	ErrorTypeUnauthorized    = ErrorTypeBase + "unauthorized"

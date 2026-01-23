@@ -373,7 +373,7 @@ func writeIdempotencyError(w http.ResponseWriter, r *http.Request, code, detail 
 	traceID := GetTraceID(r.Context())
 
 	problem := map[string]interface{}{
-		"type":     "https://api.shipaggregator.com/errors/" + strings.ToLower(strings.ReplaceAll(code, "_", "-")),
+		"type":     "https://api.kargonet.com/errors/" + strings.ToLower(strings.ReplaceAll(code, "_", "-")),
 		"title":    getIdempotencyErrorTitle(code),
 		"status":   status,
 		"detail":   detail,

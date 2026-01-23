@@ -270,7 +270,7 @@ func writeRateLimitError(w http.ResponseWriter, r *http.Request, result *RateLim
 	traceID := GetTraceID(r.Context())
 
 	problem := map[string]interface{}{
-		"type":        "https://api.shipaggregator.com/errors/rate-limit-exceeded",
+		"type":        "https://api.kargonet.com/errors/rate-limit-exceeded",
 		"title":       "Rate Limit Exceeded",
 		"status":      http.StatusTooManyRequests,
 		"detail":      fmt.Sprintf("Rate limit of %d requests per minute exceeded. Please retry after %d seconds.", result.Limit, int(result.RetryAfter.Seconds())),
