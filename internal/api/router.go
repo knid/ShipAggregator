@@ -315,7 +315,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
-		// Shipments routes (US1: Multi-carrier rate shopping, US5: Tracking)
+		// Shipments routes (US1: Multi-carrier rate shopping, US5: Tracking, US8: Returns)
 		r.Route("/shipments", func(r chi.Router) {
 			r.Use(middleware.RequireScope("shipments:read"))
 			if shipmentHandler != nil {
@@ -326,6 +326,8 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
 				// US5: Tracking endpoint
 				r.Get("/{id}/tracking", shipmentHandler.GetTracking)
+				// US8: Return shipment endpoint
+				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/return", shipmentHandler.CreateReturn)
 			}
 		})
 

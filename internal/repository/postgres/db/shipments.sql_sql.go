@@ -44,6 +44,99 @@ func (q *Queries) CountShipmentsByOrganization(ctx context.Context, arg CountShi
 	return total, err
 }
 
+const createReturnShipment = `-- name: CreateReturnShipment :one
+INSERT INTO shipments (
+    organization_id,
+    idempotency_key,
+    provider_code,
+    service_code,
+    provider_account_id,
+    is_marketplace,
+    origin_address,
+    destination_address,
+    parcel,
+    status,
+    original_shipment_id,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+)
+RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
+          provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
+          provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
+          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
+          cancellation_reason, return_shipment_id, original_shipment_id, metadata,
+          created_at, updated_at
+`
+
+type CreateReturnShipmentParams struct {
+	OrganizationID     uuid.UUID       `db:"organization_id" json:"organization_id"`
+	IdempotencyKey     string          `db:"idempotency_key" json:"idempotency_key"`
+	ProviderCode       string          `db:"provider_code" json:"provider_code"`
+	ServiceCode        string          `db:"service_code" json:"service_code"`
+	ProviderAccountID  pgtype.UUID     `db:"provider_account_id" json:"provider_account_id"`
+	IsMarketplace      bool            `db:"is_marketplace" json:"is_marketplace"`
+	OriginAddress      json.RawMessage `db:"origin_address" json:"origin_address"`
+	DestinationAddress json.RawMessage `db:"destination_address" json:"destination_address"`
+	Parcel             json.RawMessage `db:"parcel" json:"parcel"`
+	Status             string          `db:"status" json:"status"`
+	OriginalShipmentID pgtype.UUID     `db:"original_shipment_id" json:"original_shipment_id"`
+	Metadata           json.RawMessage `db:"metadata" json:"metadata"`
+}
+
+func (q *Queries) CreateReturnShipment(ctx context.Context, arg CreateReturnShipmentParams) (*Shipment, error) {
+	row := q.db.QueryRow(ctx, createReturnShipment,
+		arg.OrganizationID,
+		arg.IdempotencyKey,
+		arg.ProviderCode,
+		arg.ServiceCode,
+		arg.ProviderAccountID,
+		arg.IsMarketplace,
+		arg.OriginAddress,
+		arg.DestinationAddress,
+		arg.Parcel,
+		arg.Status,
+		arg.OriginalShipmentID,
+		arg.Metadata,
+	)
+	var i Shipment
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.IdempotencyKey,
+		&i.OfferID,
+		&i.ProviderCode,
+		&i.ServiceCode,
+		&i.ProviderAccountID,
+		&i.IsMarketplace,
+		&i.ProviderShipmentID,
+		&i.ProviderTrackingNumber,
+		&i.ProviderBarcode,
+		&i.OriginAddress,
+		&i.DestinationAddress,
+		&i.Parcel,
+		&i.CodAmountKurus,
+		&i.DeclaredValueKurus,
+		&i.Status,
+		&i.LabelDocumentID,
+		&i.LabelFormat,
+		&i.PriceChargedKurus,
+		&i.CostKurus,
+		&i.PickupScheduledAt,
+		&i.PickedUpAt,
+		&i.DeliveredAt,
+		&i.CancelledAt,
+		&i.CancellationReason,
+		&i.ReturnShipmentID,
+		&i.OriginalShipmentID,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const createShipment = `-- name: CreateShipment :one
 INSERT INTO shipments (
     organization_id,

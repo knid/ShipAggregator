@@ -331,6 +331,106 @@ func (h *ShipmentHandler) CancelShipment(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, shipmentToResponse(s))
 }
 
+// CreateReturnRequest represents the request body for creating a return shipment.
+type CreateReturnRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// CreateReturnResponse represents the response for creating a return shipment.
+type CreateReturnResponse struct {
+	ReturnShipment   ShipmentResponse `json:"return_shipment"`
+	OriginalShipment ShipmentResponse `json:"original_shipment"`
+}
+
+// CreateReturn handles POST /shipments/{id}/return
+// Creates a return shipment for a delivered shipment.
+func (h *ShipmentHandler) CreateReturn(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Get shipment ID from URL
+	shipmentIDStr := chi.URLParam(r, "id")
+	shipmentID, err := uuid.Parse(shipmentIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid shipment ID"))
+		return
+	}
+
+	var req CreateReturnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid request body"))
+		return
+	}
+
+	// Validate required fields
+	if req.IdempotencyKey == "" {
+		WriteError(w, r, NewValidationError("Validation failed", []ErrorDetail{
+			NewFieldError("idempotency_key", "REQUIRED", "Idempotency key is required"),
+		}))
+		return
+	}
+
+	// Get actor info from context
+	actorID, actorType := getActorFromContext(ctx)
+
+	// Create return shipment
+	result, err := h.shipmentService.CreateReturn(ctx, &shipment.CreateReturnRequest{
+		ShipmentID:     shipmentID,
+		OrganizationID: orgID,
+		IdempotencyKey: req.IdempotencyKey,
+		ActorID:        actorID,
+		ActorType:      actorType,
+	})
+	if err != nil {
+		h.handleReturnError(w, r, err)
+		return
+	}
+
+	response := CreateReturnResponse{
+		ReturnShipment: shipmentToResponse(result.ReturnShipment),
+	}
+	if result.OriginalShipment != nil {
+		response.OriginalShipment = shipmentToResponse(result.OriginalShipment)
+	}
+
+	writeJSON(w, http.StatusCreated, response)
+}
+
+// handleReturnError handles errors specific to return shipment operations.
+func (h *ShipmentHandler) handleReturnError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, shipment.ErrShipmentNotFound):
+		WriteError(w, r, NewNotFoundError("Shipment"))
+	case errors.Is(err, shipment.ErrReturnAlreadyExists):
+		WriteError(w, r, NewConflictError("A return shipment already exists for this shipment"))
+	case errors.Is(err, shipment.ErrCannotCreateReturn):
+		WriteError(w, r, &ProblemDetails{
+			Type:   ErrorTypeValidation,
+			Title:  "Cannot Create Return",
+			Status: http.StatusUnprocessableEntity,
+			Detail: "Return shipments can only be created for delivered shipments",
+			Code:   CodeValidationError,
+		})
+	case errors.Is(err, shipment.ErrProviderError):
+		WriteError(w, r, &ProblemDetails{
+			Type:   ErrorTypeProviderError,
+			Title:  "Provider Error",
+			Status: http.StatusBadGateway,
+			Detail: "An error occurred while communicating with the shipping provider",
+			Code:   CodeProviderError,
+		})
+	default:
+		h.logger.Error("Return shipment operation failed", "error", err)
+		WriteError(w, r, NewInternalError("Failed to create return shipment"))
+	}
+}
+
 // GetTracking handles GET /shipments/{id}/tracking
 // Returns the tracking history for a shipment.
 func (h *ShipmentHandler) GetTracking(w http.ResponseWriter, r *http.Request) {

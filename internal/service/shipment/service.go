@@ -662,3 +662,343 @@ func (s *Service) UpdateStatus(ctx context.Context, shipmentID uuid.UUID, status
 		Status: status.String(),
 	})
 }
+
+// CreateReturnRequest represents a request to create a return shipment.
+type CreateReturnRequest struct {
+	ShipmentID     uuid.UUID
+	OrganizationID uuid.UUID
+	IdempotencyKey string
+	LabelFormat    domain.LabelFormat
+	ActorID        *uuid.UUID
+	ActorType      domain.ActorType
+}
+
+// CreateReturnResult represents the result of creating a return shipment.
+type CreateReturnResult struct {
+	ReturnShipment   *db.Shipment
+	OriginalShipment *db.Shipment
+	TrackingNumber   string
+	LabelDocument    *db.Document
+}
+
+// ErrReturnAlreadyExists indicates a return shipment already exists for this shipment.
+var ErrReturnAlreadyExists = errors.New("return shipment already exists")
+
+// ErrCannotCreateReturn indicates the shipment cannot have a return created.
+var ErrCannotCreateReturn = errors.New("cannot create return for this shipment")
+
+// CreateReturn creates a return shipment for a delivered shipment.
+// The return shipment swaps origin and destination addresses.
+func (s *Service) CreateReturn(ctx context.Context, req *CreateReturnRequest) (*CreateReturnResult, error) {
+	// Check for existing return shipment with same idempotency key
+	existingShipment, err := s.queries.GetShipmentByIdempotencyKey(ctx, db.GetShipmentByIdempotencyKeyParams{
+		OrganizationID: req.OrganizationID,
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if err == nil {
+		// Return existing shipment if idempotency key matches
+		originalShipment, _ := s.queries.GetShipmentByID(ctx, existingShipment.OriginalShipmentID.Bytes)
+		return &CreateReturnResult{
+			ReturnShipment:   existingShipment,
+			OriginalShipment: originalShipment,
+		}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("failed to check idempotency: %w", err)
+	}
+
+	// Get the original shipment
+	originalShipment, err := s.queries.GetShipmentForUpdate(ctx, req.ShipmentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrShipmentNotFound
+		}
+		return nil, fmt.Errorf("failed to get shipment: %w", err)
+	}
+
+	// Verify organization ownership
+	if originalShipment.OrganizationID != req.OrganizationID {
+		return nil, ErrShipmentNotFound
+	}
+
+	// Check if shipment can have a return created
+	status := domain.ShipmentStatus(originalShipment.Status)
+	if !status.CanCreateReturn() {
+		return nil, ErrCannotCreateReturn
+	}
+
+	// Check if return already exists
+	if originalShipment.ReturnShipmentID.Valid {
+		return nil, ErrReturnAlreadyExists
+	}
+
+	// Parse addresses - swap origin and destination for return
+	var originAddress domain.AddressSnapshot
+	if err := json.Unmarshal(originalShipment.DestinationAddress, &originAddress); err != nil {
+		return nil, fmt.Errorf("failed to parse destination address: %w", err)
+	}
+
+	var destAddress domain.AddressSnapshot
+	if err := json.Unmarshal(originalShipment.OriginAddress, &destAddress); err != nil {
+		return nil, fmt.Errorf("failed to parse origin address: %w", err)
+	}
+
+	var parcel domain.Parcel
+	if err := json.Unmarshal(originalShipment.Parcel, &parcel); err != nil {
+		return nil, fmt.Errorf("failed to parse parcel: %w", err)
+	}
+
+	// Serialize addresses for return shipment (swapped)
+	returnOriginJSON, err := json.Marshal(originAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize return origin address: %w", err)
+	}
+
+	returnDestJSON, err := json.Marshal(destAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize return destination address: %w", err)
+	}
+
+	// Create metadata for return shipment
+	metadata := map[string]interface{}{
+		"is_return":            true,
+		"original_shipment_id": originalShipment.ID.String(),
+	}
+	if originalShipment.ProviderTrackingNumber != nil {
+		metadata["original_tracking_number"] = *originalShipment.ProviderTrackingNumber
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		metadataJSON = []byte("{}")
+	}
+
+	// Create provider account ID pgtype
+	var providerAccountID pgtype.UUID
+	if originalShipment.ProviderAccountID.Valid {
+		providerAccountID = originalShipment.ProviderAccountID
+	}
+
+	// Create original shipment ID pgtype
+	originalShipmentID := pgtype.UUID{Bytes: originalShipment.ID, Valid: true}
+
+	// Create return shipment in draft status
+	returnShipment, err := s.queries.CreateReturnShipment(ctx, db.CreateReturnShipmentParams{
+		OrganizationID:     req.OrganizationID,
+		IdempotencyKey:     req.IdempotencyKey,
+		ProviderCode:       originalShipment.ProviderCode,
+		ServiceCode:        originalShipment.ServiceCode,
+		ProviderAccountID:  providerAccountID,
+		IsMarketplace:      originalShipment.IsMarketplace,
+		OriginAddress:      returnOriginJSON,
+		DestinationAddress: returnDestJSON,
+		Parcel:             originalShipment.Parcel,
+		Status:             domain.ShipmentStatusDraft.String(),
+		OriginalShipmentID: originalShipmentID,
+		Metadata:           metadataJSON,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create return shipment: %w", err)
+	}
+
+	// Link return shipment to original
+	_, err = s.queries.UpdateShipmentReturnLink(ctx, db.UpdateShipmentReturnLinkParams{
+		ID:               originalShipment.ID,
+		ReturnShipmentID: pgtype.UUID{Bytes: returnShipment.ID, Valid: true},
+	})
+	if err != nil {
+		s.logger.Error("Failed to link return shipment to original",
+			"error", err,
+			"original_shipment_id", originalShipment.ID,
+			"return_shipment_id", returnShipment.ID,
+		)
+		// Don't fail the operation, the return shipment is created
+	}
+
+	s.logger.Info("Return shipment created",
+		"return_shipment_id", returnShipment.ID,
+		"original_shipment_id", originalShipment.ID,
+		"organization_id", req.OrganizationID,
+		"provider_code", originalShipment.ProviderCode,
+	)
+
+	// Refresh original shipment to get updated return_shipment_id
+	updatedOriginal, _ := s.queries.GetShipmentByID(ctx, originalShipment.ID)
+	if updatedOriginal != nil {
+		originalShipment = updatedOriginal
+	}
+
+	return &CreateReturnResult{
+		ReturnShipment:   returnShipment,
+		OriginalShipment: originalShipment,
+	}, nil
+}
+
+// PurchaseReturnLabel purchases a shipping label for a return shipment.
+// This is similar to PurchaseLabel but uses the CreateReturn provider method.
+func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelRequest) (*PurchaseLabelResult, error) {
+	// Get return shipment
+	returnShipment, err := s.queries.GetShipmentForUpdate(ctx, req.ShipmentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrShipmentNotFound
+		}
+		return nil, fmt.Errorf("failed to get return shipment: %w", err)
+	}
+
+	// Verify organization ownership
+	if returnShipment.OrganizationID != req.OrganizationID {
+		return nil, ErrShipmentNotFound
+	}
+
+	// Check shipment status
+	if returnShipment.Status != domain.ShipmentStatusDraft.String() {
+		return nil, ErrLabelAlreadyPurchased
+	}
+
+	// Verify this is a return shipment
+	if !returnShipment.OriginalShipmentID.Valid {
+		return nil, fmt.Errorf("shipment is not a return shipment")
+	}
+
+	// Get original shipment for reference
+	originalShipment, err := s.queries.GetShipmentByID(ctx, returnShipment.OriginalShipmentID.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get original shipment: %w", err)
+	}
+
+	// Determine if this is a BYOA shipment
+	isBYOA := !returnShipment.IsMarketplace && returnShipment.ProviderAccountID.Valid
+
+	// For marketplace return shipments, we may charge a return fee
+	// For now, returns are free (no wallet charge)
+	var priceKurus int32 = 0
+
+	// Parse addresses and parcel
+	var originAddress domain.AddressSnapshot
+	if err := json.Unmarshal(returnShipment.OriginAddress, &originAddress); err != nil {
+		return nil, fmt.Errorf("failed to parse origin address: %w", err)
+	}
+
+	var destAddress domain.AddressSnapshot
+	if err := json.Unmarshal(returnShipment.DestinationAddress, &destAddress); err != nil {
+		return nil, fmt.Errorf("failed to parse destination address: %w", err)
+	}
+
+	var parcel domain.Parcel
+	if err := json.Unmarshal(returnShipment.Parcel, &parcel); err != nil {
+		return nil, fmt.Errorf("failed to parse parcel: %w", err)
+	}
+
+	// Get provider adapter
+	providerCode := domain.ProviderCode(returnShipment.ProviderCode)
+	adapter, err := s.adapterPool.Get(providerCode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider adapter: %w", err)
+	}
+
+	// Build create return request
+	createReturnReq := provider.CreateReturnRequest{
+		OriginalTrackingNumber: "",
+		Origin:                 originAddress,
+		Destination:            destAddress,
+		Parcel:                 parcel,
+		ServiceCode:            returnShipment.ServiceCode,
+		Reference:              returnShipment.IdempotencyKey,
+		LabelFormat:            req.LabelFormat,
+	}
+
+	if originalShipment.ProviderTrackingNumber != nil {
+		createReturnReq.OriginalTrackingNumber = *originalShipment.ProviderTrackingNumber
+	}
+	if originalShipment.ProviderShipmentID != nil {
+		createReturnReq.OriginalProviderShipmentID = *originalShipment.ProviderShipmentID
+	}
+
+	// For BYOA shipments, get and use customer credentials
+	if isBYOA && s.accountService != nil {
+		account, err := s.accountService.GetAccount(ctx, returnShipment.ProviderAccountID.Bytes, req.OrganizationID)
+		if err != nil {
+			if errors.Is(err, providerservice.ErrAccountNotFound) {
+				return nil, ErrProviderAccountNotFound
+			}
+			return nil, fmt.Errorf("failed to get provider account: %w", err)
+		}
+
+		if account.Status != domain.ProviderAccountStatusVerified.String() {
+			return nil, ErrProviderAccountInvalid
+		}
+
+		credentials, err := s.accountService.DecryptCredentials(ctx, account)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+		}
+
+		createReturnReq.Credentials = credentials
+		_ = s.accountService.RecordUsage(ctx, account.ID)
+	}
+
+	// Create return shipment with provider
+	createResp, err := adapter.CreateReturn(ctx, createReturnReq)
+	if err != nil {
+		s.logger.Error("Provider return shipment creation failed",
+			"error", err,
+			"return_shipment_id", returnShipment.ID,
+			"original_shipment_id", originalShipment.ID,
+			"provider_code", returnShipment.ProviderCode,
+		)
+		return nil, fmt.Errorf("%w: %v", ErrProviderError, err)
+	}
+
+	// Store label document
+	var labelDocumentID pgtype.UUID
+	var labelDocument *db.Document
+	if createResp.Label != nil && len(createResp.Label.Content) > 0 {
+		doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
+			OrganizationID: req.OrganizationID,
+			Type:           domain.DocumentTypeLabel.String(),
+			Format:         string(createResp.Label.Format),
+			Filename:       fmt.Sprintf("return_label_%s.%s", createResp.TrackingNumber, createResp.Label.Format),
+			StoragePath:    fmt.Sprintf("labels/%s/%s", req.OrganizationID, returnShipment.ID),
+			StorageBucket:  "documents",
+			ContentType:    createResp.Label.ContentType,
+			SizeBytes:      int32(len(createResp.Label.Content)),
+			ContentHash:    "",
+			Metadata:       []byte("{}"),
+		})
+		if err != nil {
+			s.logger.Error("Failed to create return label document", "error", err)
+		} else {
+			labelDocumentID = pgtype.UUID{Bytes: doc.ID, Valid: true}
+			labelDocument = doc
+		}
+	}
+
+	// Update return shipment with provider details
+	labelFormat := string(req.LabelFormat)
+	updatedShipment, err := s.queries.UpdateShipmentAfterLabelPurchase(ctx, db.UpdateShipmentAfterLabelPurchaseParams{
+		ID:                     returnShipment.ID,
+		ProviderShipmentID:     &createResp.ProviderShipmentID,
+		ProviderTrackingNumber: &createResp.TrackingNumber,
+		ProviderBarcode:        &createResp.Barcode,
+		LabelDocumentID:        labelDocumentID,
+		LabelFormat:            &labelFormat,
+		PriceChargedKurus:      &priceKurus,
+		CostKurus:              nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update return shipment: %w", err)
+	}
+
+	s.logger.Info("Return label purchased successfully",
+		"return_shipment_id", returnShipment.ID,
+		"original_shipment_id", originalShipment.ID,
+		"tracking_number", createResp.TrackingNumber,
+		"provider_code", returnShipment.ProviderCode,
+	)
+
+	return &PurchaseLabelResult{
+		Shipment:       updatedShipment,
+		TrackingNumber: createResp.TrackingNumber,
+		LabelDocument:  labelDocument,
+	}, nil
+}

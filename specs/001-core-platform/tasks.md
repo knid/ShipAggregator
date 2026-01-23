@@ -343,9 +343,9 @@
 
 ### Implementation for User Story 8
 
-- [ ] T175 [P] [US8] Update internal/service/shipment/service.go with CreateReturn operation
-- [ ] T176 [US8] Implement POST /shipments/{id}/return endpoint in internal/api/handler/shipment.go
-- [ ] T177 [US8] Register routes for US8 endpoints in internal/api/router.go
+- [X] T175 [P] [US8] Update internal/service/shipment/service.go with CreateReturn operation
+- [X] T176 [US8] Implement POST /shipments/{id}/return endpoint in internal/api/handler/shipment.go
+- [X] T177 [US8] Register routes for US8 endpoints in internal/api/router.go
 
 **Checkpoint**: Return shipment creation functional
 

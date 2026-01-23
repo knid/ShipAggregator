@@ -70,6 +70,7 @@ type Querier interface {
 	CreateOutboxMessagesBatch(ctx context.Context, arg []CreateOutboxMessagesBatchParams) (int64, error)
 	CreateProviderAccount(ctx context.Context, arg CreateProviderAccountParams) (*ProviderAccount, error)
 	CreateQuote(ctx context.Context, arg CreateQuoteParams) (*Quote, error)
+	CreateReturnShipment(ctx context.Context, arg CreateReturnShipmentParams) (*Shipment, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (*Role, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (*Session, error)
 	CreateShipment(ctx context.Context, arg CreateShipmentParams) (*Shipment, error)

@@ -242,3 +242,28 @@ WHERE s.cod_amount_kurus IS NOT NULL
   AND s.cod_amount_kurus > 0
   AND s.status = 'delivered'
   AND cs.id IS NULL;
+
+-- name: CreateReturnShipment :one
+INSERT INTO shipments (
+    organization_id,
+    idempotency_key,
+    provider_code,
+    service_code,
+    provider_account_id,
+    is_marketplace,
+    origin_address,
+    destination_address,
+    parcel,
+    status,
+    original_shipment_id,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+)
+RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
+          provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
+          provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
+          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
+          cancellation_reason, return_shipment_id, original_shipment_id, metadata,
+          created_at, updated_at;
