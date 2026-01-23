@@ -25,6 +25,7 @@ import (
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
 	"github.com/knid/kargonet/internal/service/auth"
 	"github.com/knid/kargonet/internal/service/billing"
+	providerservice "github.com/knid/kargonet/internal/service/provider"
 	"github.com/knid/kargonet/internal/service/shipment"
 
 	// Import all provider adapters to register them with the global factory.
@@ -164,24 +165,47 @@ func run() error {
 	shipmentService := shipment.NewService(queries, adapterPool, ledgerService, walletService, logger)
 	logger.Info("shipment service initialized")
 
+	// Initialize provider account services (US2: BYOA - Bring Your Own Account)
+	var providerAccountService *providerservice.AccountService
+	var providerVerificationService *providerservice.VerificationService
+	if cfg.Features.BYOAEnabled && len(cfg.Security.EncryptionKey) == 32 {
+		var err error
+		providerAccountService, err = providerservice.NewAccountService(queries, cfg.Security.EncryptionKey, logger)
+		if err != nil {
+			logger.Warn("failed to initialize provider account service, BYOA feature disabled", "error", err)
+		} else {
+			providerVerificationService = providerservice.NewVerificationService(
+				providerAccountService,
+				adapterPool,
+				queries,
+				logger,
+			)
+			logger.Info("provider account services initialized (BYOA enabled)")
+		}
+	} else if cfg.Features.BYOAEnabled {
+		logger.Warn("BYOA feature enabled but ENCRYPTION_KEY not configured, provider accounts disabled")
+	}
+
 	// Create router configuration
 	routerCfg := api.RouterConfig{
-		Logger:             logger,
-		Metrics:            metrics,
-		Tracer:             tracer,
-		DBPool:             dbPool,
-		Queries:            queries,
-		RedisCache:         redisCache,
-		RateLimiter:        rateLimiter,
-		SessionService:     sessionService,
-		SessionValidator:   sessionValidator,
-		ShipmentService:    shipmentService,
-		WalletService:      walletService,
-		LedgerService:      ledgerService,
-		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
-		RateLimitPerMinute: cfg.RateLimit.RequestsPerSecond * 60,
-		IdempotencyTTL:     cfg.Idempotency.TTL,
-		Environment:        string(cfg.App.Env),
+		Logger:                      logger,
+		Metrics:                     metrics,
+		Tracer:                      tracer,
+		DBPool:                      dbPool,
+		Queries:                     queries,
+		RedisCache:                  redisCache,
+		RateLimiter:                 rateLimiter,
+		SessionService:              sessionService,
+		SessionValidator:            sessionValidator,
+		ShipmentService:             shipmentService,
+		ProviderAccountService:      providerAccountService,
+		ProviderVerificationService: providerVerificationService,
+		WalletService:               walletService,
+		LedgerService:               ledgerService,
+		CORSAllowedOrigins:          cfg.CORS.AllowedOrigins,
+		RateLimitPerMinute:          cfg.RateLimit.RequestsPerSecond * 60,
+		IdempotencyTTL:              cfg.Idempotency.TTL,
+		Environment:                 string(cfg.App.Env),
 	}
 
 	// Create router
