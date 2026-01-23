@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/provider"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/provider"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
 )
 
 // Verification errors.

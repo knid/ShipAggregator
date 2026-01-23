@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/knid/kargonet/internal/observability"
 )
 
 // Environment represents the Iyzico environment.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/redis"
 )
 
 // RateLimitConfig holds configuration for the rate limit middleware.

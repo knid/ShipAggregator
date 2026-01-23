@@ -169,7 +169,7 @@ linters-settings:
     simplify: true
   
   goimports:
-    local-prefixes: github.com/e-port/shipping-aggregator
+    local-prefixes: github.com/knid/kargonet
   
   gosec:
     excludes:

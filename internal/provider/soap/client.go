@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e-port/shipping-aggregator/internal/provider"
+	"github.com/knid/kargonet/internal/provider"
 )
 
 // Common SOAP errors.

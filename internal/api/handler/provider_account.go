@@ -10,11 +10,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	providerservice "github.com/knid/kargonet/internal/service/provider"
 )
 
 // ProviderAccountHandler handles provider account HTTP requests.

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/payment/iyzico"
-	"github.com/e-port/shipping-aggregator/internal/service/billing"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/payment/iyzico"
+	"github.com/knid/kargonet/internal/service/billing"
 )
 
 // IyzicoHandler handles Iyzico payment callbacks and webhooks.

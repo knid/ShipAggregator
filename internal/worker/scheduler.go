@@ -12,8 +12,8 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/e-port/shipping-aggregator/internal/config"
-	"github.com/e-port/shipping-aggregator/internal/worker/tasks"
+	"github.com/knid/kargonet/internal/config"
+	"github.com/knid/kargonet/internal/worker/tasks"
 )
 
 // Scheduler manages periodic task scheduling using Asynq.

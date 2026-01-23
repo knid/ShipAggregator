@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
 )
 
 const (

@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
 )
 
 // AddressHandler handles address-related HTTP requests.

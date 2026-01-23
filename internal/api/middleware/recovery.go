@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/knid/kargonet/internal/observability"
 )
 
 // RecoveryConfig holds configuration for the recovery middleware.

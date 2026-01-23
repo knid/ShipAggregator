@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/knid/kargonet/internal/observability"
 )
 
 // TraceIDHeader is the header name for trace ID.

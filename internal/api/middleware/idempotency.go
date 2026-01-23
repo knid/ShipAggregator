@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/redis"
 )
 
 // IdempotencyConfig holds configuration for the idempotency middleware.

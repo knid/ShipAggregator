@@ -12,12 +12,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	"github.com/e-port/shipping-aggregator/internal/service/shipment"
-	"github.com/e-port/shipping-aggregator/internal/service/tracking"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/service/shipment"
+	"github.com/knid/kargonet/internal/service/tracking"
 )
 
 // ShipmentHandler handles shipment-related HTTP requests.

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/provider"
-	"github.com/e-port/shipping-aggregator/internal/provider/soap"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/provider"
+	"github.com/knid/kargonet/internal/provider/soap"
 )
 
 const (

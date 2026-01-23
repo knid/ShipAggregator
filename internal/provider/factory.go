@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
+	"github.com/knid/kargonet/internal/domain"
 )
 
 // AdapterFactory creates and manages provider adapters.

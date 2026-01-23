@@ -19,10 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	"github.com/e-port/shipping-aggregator/internal/service/webhook"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/service/webhook"
 )
 
 const (

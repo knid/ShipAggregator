@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	"github.com/e-port/shipping-aggregator/internal/service/auth"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/service/auth"
 )
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)

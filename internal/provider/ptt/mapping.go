@@ -3,7 +3,7 @@ package ptt
 import (
 	"strings"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
+	"github.com/knid/kargonet/internal/domain"
 )
 
 // statusMapping maps PTT status codes to normalized tracking statuses.

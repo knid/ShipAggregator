@@ -11,11 +11,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/provider"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/provider"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	providerservice "github.com/knid/kargonet/internal/service/provider"
 )
 
 // QuoteExpiry is the default expiry time for quotes (30 minutes).

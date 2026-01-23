@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
-	"github.com/e-port/shipping-aggregator/internal/config"
+	"github.com/knid/kargonet/internal/config"
 )
 
 // Build information (set via ldflags).

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
 )
 
 // AuditLogRepository provides access to audit log data.

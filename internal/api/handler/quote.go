@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	"github.com/e-port/shipping-aggregator/internal/service/quote"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/service/quote"
 )
 
 // QuoteHandler handles quote-related HTTP requests.

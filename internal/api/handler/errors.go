@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/domain"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/domain"
 )
 
 // ProblemDetails represents an RFC 7807 Problem Details response.

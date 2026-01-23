@@ -10,7 +10,7 @@ import (
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/e-port/shipping-aggregator/internal/observability"
+	"github.com/knid/kargonet/internal/observability"
 )
 
 // LoggingConfig holds configuration for the logging middleware.

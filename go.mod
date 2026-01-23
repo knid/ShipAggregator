@@ -1,4 +1,4 @@
-module github.com/e-port/shipping-aggregator
+module github.com/knid/kargonet
 
 go 1.25.1
 

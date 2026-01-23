@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
-	"github.com/e-port/shipping-aggregator/internal/provider"
-	"github.com/e-port/shipping-aggregator/internal/provider/rest"
+	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/provider"
+	"github.com/knid/kargonet/internal/provider/rest"
 )
 
 const (

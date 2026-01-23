@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
+	"github.com/knid/kargonet/internal/domain"
 )
 
 // Common errors returned by provider adapters.

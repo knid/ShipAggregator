@@ -14,19 +14,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/e-port/shipping-aggregator/internal/config"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/provider"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	redisrepo "github.com/e-port/shipping-aggregator/internal/repository/redis"
-	"github.com/e-port/shipping-aggregator/internal/service/tracking"
-	"github.com/e-port/shipping-aggregator/internal/service/webhook"
-	"github.com/e-port/shipping-aggregator/internal/worker"
-	"github.com/e-port/shipping-aggregator/internal/worker/tasks"
+	"github.com/knid/kargonet/internal/config"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/provider"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	redisrepo "github.com/knid/kargonet/internal/repository/redis"
+	"github.com/knid/kargonet/internal/service/tracking"
+	"github.com/knid/kargonet/internal/service/webhook"
+	"github.com/knid/kargonet/internal/worker"
+	"github.com/knid/kargonet/internal/worker/tasks"
 
 	// Import all provider adapters to register them with the global factory.
 	// This ensures all implemented carrier adapters are available for use.
-	_ "github.com/e-port/shipping-aggregator/internal/provider/all"
+	_ "github.com/knid/kargonet/internal/provider/all"
 )
 
 // Build information (set via ldflags).

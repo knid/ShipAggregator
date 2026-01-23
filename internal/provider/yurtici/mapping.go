@@ -3,7 +3,7 @@ package yurtici
 import (
 	"strings"
 
-	"github.com/e-port/shipping-aggregator/internal/domain"
+	"github.com/knid/kargonet/internal/domain"
 )
 
 // statusMapping maps Yurtiçi status codes to normalized tracking statuses.

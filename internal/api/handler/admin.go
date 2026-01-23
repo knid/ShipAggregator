@@ -10,12 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/e-port/shipping-aggregator/internal/api/middleware"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres"
-	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
-	"github.com/e-port/shipping-aggregator/internal/service/tracking"
-	"github.com/e-port/shipping-aggregator/internal/service/webhook"
+	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/repository/postgres"
+	"github.com/knid/kargonet/internal/repository/postgres/db"
+	"github.com/knid/kargonet/internal/service/tracking"
+	"github.com/knid/kargonet/internal/service/webhook"
 )
 
 // AdminHandler handles admin-related HTTP requests.

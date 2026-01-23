@@ -1,25 +1,25 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ShipAggregator API",
+    "title": "KargoNet API",
     "description": "TR-Only Shipping Aggregation Backend API.\n\n## Authentication\n\n- **Dashboard Auth**: Session-based authentication for ops/admin users\n- **API Key Auth**: Bearer token authentication for customer integrations\n\n## Idempotency\n\nEndpoints marked with `Idempotency-Key` header requirement must include a unique\nclient-generated key. Duplicate requests with the same key return the original response.\n\n## Pagination\n\nList endpoints use cursor-based pagination with `cursor` and `limit` query parameters.\n\n## Error Handling\n\nAll errors follow RFC 7807 Problem Details format with additional `code` and `trace_id` fields.\n",
     "version": "1.0.0",
     "contact": {
       "name": "API Support",
-      "email": "api-support@shipaggregator.com"
+      "email": "api-support@kargonet"
     },
     "license": {
       "name": "Proprietary",
-      "url": "https://shipaggregator.com/terms"
+      "url": "https://kargonet/terms"
     }
   },
   "servers": [
     {
-      "url": "https://api.shipaggregator.com/v1",
+      "url": "https://api.kargonet/v1",
       "description": "Production"
     },
     {
-      "url": "https://api.sandbox.shipaggregator.com/v1",
+      "url": "https://api.sandbox.kargonet/v1",
       "description": "Sandbox"
     }
   ],
@@ -3670,7 +3670,7 @@
               "$ref": "#/components/schemas/ProblemDetails"
             },
             "example": {
-              "type": "https://api.shipaggregator.com/errors/auth-invalid",
+              "type": "https://api.kargonet/errors/auth-invalid",
               "title": "Authentication Required",
               "status": 401,
               "detail": "Invalid or missing authentication credentials",
@@ -3688,7 +3688,7 @@
               "$ref": "#/components/schemas/ProblemDetails"
             },
             "example": {
-              "type": "https://api.shipaggregator.com/errors/forbidden",
+              "type": "https://api.kargonet/errors/forbidden",
               "title": "Forbidden",
               "status": 403,
               "detail": "You do not have permission to perform this action",
@@ -3706,7 +3706,7 @@
               "$ref": "#/components/schemas/ProblemDetails"
             },
             "example": {
-              "type": "https://api.shipaggregator.com/errors/not-found",
+              "type": "https://api.kargonet/errors/not-found",
               "title": "Not Found",
               "status": 404,
               "detail": "The requested resource was not found",
@@ -3724,7 +3724,7 @@
               "$ref": "#/components/schemas/ProblemDetails"
             },
             "example": {
-              "type": "https://api.shipaggregator.com/errors/conflict",
+              "type": "https://api.kargonet/errors/conflict",
               "title": "Conflict",
               "status": 409,
               "detail": "The request conflicts with the current state",
@@ -3742,7 +3742,7 @@
               "$ref": "#/components/schemas/ValidationProblemDetails"
             },
             "example": {
-              "type": "https://api.shipaggregator.com/errors/validation-failed",
+              "type": "https://api.kargonet/errors/validation-failed",
               "title": "Validation Failed",
               "status": 422,
               "detail": "One or more fields failed validation",

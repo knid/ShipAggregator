@@ -16,15 +16,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/e-port/shipping-aggregator/internal/api"
-	"github.com/e-port/shipping-aggregator/internal/api/handler"
-	"github.com/e-port/shipping-aggregator/internal/config"
-	"github.com/e-port/shipping-aggregator/internal/observability"
-	redisrepo "github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/knid/kargonet/internal/api"
+	"github.com/knid/kargonet/internal/api/handler"
+	"github.com/knid/kargonet/internal/config"
+	"github.com/knid/kargonet/internal/observability"
+	redisrepo "github.com/knid/kargonet/internal/repository/redis"
 
 	// Import all provider adapters to register them with the global factory.
 	// This ensures all implemented carrier adapters are available for use.
-	_ "github.com/e-port/shipping-aggregator/internal/provider/all"
+	_ "github.com/knid/kargonet/internal/provider/all"
 )
 
 // Build information (set via ldflags).
