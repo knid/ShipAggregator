@@ -21,6 +21,7 @@ import (
 	"github.com/knid/kargonet/internal/repository/redis"
 	"github.com/knid/kargonet/internal/service/auth"
 	"github.com/knid/kargonet/internal/service/billing"
+	"github.com/knid/kargonet/internal/service/organization"
 	providerservice "github.com/knid/kargonet/internal/service/provider"
 	"github.com/knid/kargonet/internal/service/quote"
 	"github.com/knid/kargonet/internal/service/shipment"
@@ -87,6 +88,8 @@ type RouterConfig struct {
 	AuditLogRepository *postgres.AuditLogRepository
 	// ProviderAPILogRepository is the provider API log repository (US10: Admin Tools).
 	ProviderAPILogRepository *postgres.ProviderAPILogRepository
+	// OrganizationService is the organization service for managing organizations and members.
+	OrganizationService *organization.Service
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -171,7 +174,15 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	var shipmentHandler *handler.ShipmentHandler
 	var providerAccountHandler *handler.ProviderAccountHandler
 	var billingHandler *handler.BillingHandler
+	var addressHandler *handler.AddressHandler
+	var organizationHandler *handler.OrganizationHandler
 
+	if cfg.Queries != nil {
+		addressHandler = handler.NewAddressHandler(cfg.Queries, cfg.Logger)
+	}
+	if cfg.OrganizationService != nil {
+		organizationHandler = handler.NewOrganizationHandler(cfg.OrganizationService, cfg.Logger)
+	}
 	if cfg.QuoteService != nil && cfg.Queries != nil {
 		quoteHandler = handler.NewQuoteHandler(cfg.QuoteService, cfg.Queries, cfg.Logger)
 	}
@@ -407,12 +418,17 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		// Addresses routes
 		r.Route("/addresses", func(r chi.Router) {
 			r.Use(middleware.RequireScope("addresses:read"))
-			// r.Get("/", addressesHandler.List)
-			// r.Post("/", addressesHandler.Create)
-			// r.Get("/{addressID}", addressesHandler.Get)
-			// r.Put("/{addressID}", addressesHandler.Update)
-			// r.Delete("/{addressID}", addressesHandler.Delete)
-			// r.Post("/validate", addressesHandler.Validate)
+			if addressHandler != nil {
+				r.Get("/", addressHandler.ListAddresses)
+				r.With(middleware.RequireScope("addresses:write")).Post("/", addressHandler.CreateAddress)
+				r.Get("/default-sender", addressHandler.GetDefaultSender)
+				r.Get("/default-recipient", addressHandler.GetDefaultRecipient)
+				r.Get("/{id}", addressHandler.GetAddress)
+				r.With(middleware.RequireScope("addresses:write")).Patch("/{id}", addressHandler.UpdateAddress)
+				r.With(middleware.RequireScope("addresses:write")).Delete("/{id}", addressHandler.DeleteAddress)
+				r.With(middleware.RequireScope("addresses:write")).Post("/{id}/default-sender", addressHandler.SetDefaultSender)
+				r.With(middleware.RequireScope("addresses:write")).Post("/{id}/default-recipient", addressHandler.SetDefaultRecipient)
+			}
 		})
 
 		// Webhooks routes
@@ -425,15 +441,20 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Delete("/{webhookID}", webhooksHandler.Delete)
 		})
 
-		// Organization routes (admin only)
-		r.Route("/organization", func(r chi.Router) {
+		// Organization routes - /orgs/current for current organization context
+		r.Route("/orgs/current", func(r chi.Router) {
 			r.Use(middleware.RequireScope("organization:read"))
-			// r.Get("/", organizationHandler.Get)
-			// r.Put("/", organizationHandler.Update)
-			// r.Get("/members", organizationHandler.ListMembers)
-			// r.Post("/members", organizationHandler.InviteMember)
-			// r.Get("/api-keys", organizationHandler.ListAPIKeys)
-			// r.Post("/api-keys", organizationHandler.CreateAPIKey)
+			if organizationHandler != nil {
+				r.Get("/", organizationHandler.GetCurrentOrganization)
+				r.With(middleware.RequireScope("organization:write")).Patch("/", organizationHandler.UpdateCurrentOrganization)
+				r.Get("/members", organizationHandler.ListMembers)
+				r.With(middleware.RequireScope("organization:write")).Post("/members", organizationHandler.CreateMember)
+				r.Get("/members/{id}", organizationHandler.GetMember)
+				r.With(middleware.RequireScope("organization:write")).Patch("/members/{id}", organizationHandler.UpdateMember)
+				r.With(middleware.RequireScope("organization:write")).Delete("/members/{id}", organizationHandler.RemoveMember)
+				r.With(middleware.RequireScope("organization:write")).Post("/members/{id}/suspend", organizationHandler.SuspendMember)
+				r.With(middleware.RequireScope("organization:write")).Post("/members/{id}/reactivate", organizationHandler.ReactivateMember)
+			}
 		})
 
 		// API Keys routes (US6: API Key Management)

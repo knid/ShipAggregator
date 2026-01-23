@@ -25,6 +25,7 @@ import (
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
 	"github.com/knid/kargonet/internal/service/auth"
 	"github.com/knid/kargonet/internal/service/billing"
+	"github.com/knid/kargonet/internal/service/organization"
 	providerservice "github.com/knid/kargonet/internal/service/provider"
 	"github.com/knid/kargonet/internal/service/shipment"
 
@@ -165,6 +166,10 @@ func run() error {
 	shipmentService := shipment.NewService(queries, adapterPool, ledgerService, walletService, logger)
 	logger.Info("shipment service initialized")
 
+	// Initialize organization service
+	organizationService := organization.NewService(queries)
+	logger.Info("organization service initialized")
+
 	// Initialize provider account services (US2: BYOA - Bring Your Own Account)
 	var providerAccountService *providerservice.AccountService
 	var providerVerificationService *providerservice.VerificationService
@@ -202,6 +207,7 @@ func run() error {
 		ProviderVerificationService: providerVerificationService,
 		WalletService:               walletService,
 		LedgerService:               ledgerService,
+		OrganizationService:         organizationService,
 		CORSAllowedOrigins:          cfg.CORS.AllowedOrigins,
 		RateLimitPerMinute:          cfg.RateLimit.RequestsPerSecond * 60,
 		IdempotencyTTL:              cfg.Idempotency.TTL,
