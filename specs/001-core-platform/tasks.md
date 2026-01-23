@@ -396,9 +396,9 @@
 - [x] T190 [P] Implement internal/provider/surat/adapter.go with Sürat SOAP adapter
 - [x] T191 [P] Implement internal/provider/surat/types.go with Sürat-specific types
 - [x] T192 [P] Implement internal/provider/surat/mapping.go with status code mapping
-- [ ] T193 [P] Implement internal/provider/ptt/adapter.go with PTT SOAP adapter
-- [ ] T194 [P] Implement internal/provider/ptt/types.go with PTT-specific types
-- [ ] T195 [P] Implement internal/provider/ptt/mapping.go with status code mapping
+- [x] T193 [P] Implement internal/provider/ptt/adapter.go with PTT SOAP adapter
+- [x] T194 [P] Implement internal/provider/ptt/types.go with PTT-specific types
+- [x] T195 [P] Implement internal/provider/ptt/mapping.go with status code mapping
 - [ ] T196 [P] Implement internal/provider/mng/adapter.go with MNG SOAP adapter
 - [ ] T197 [P] Implement internal/provider/mng/types.go with MNG-specific types
 - [ ] T198 [P] Implement internal/provider/mng/mapping.go with status code mapping
