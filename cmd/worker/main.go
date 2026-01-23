@@ -23,6 +23,10 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/service/webhook"
 	"github.com/e-port/shipping-aggregator/internal/worker"
 	"github.com/e-port/shipping-aggregator/internal/worker/tasks"
+
+	// Import all provider adapters to register them with the global factory.
+	// This ensures all implemented carrier adapters are available for use.
+	_ "github.com/e-port/shipping-aggregator/internal/provider/all"
 )
 
 // Build information (set via ldflags).

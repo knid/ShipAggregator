@@ -21,6 +21,10 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/config"
 	"github.com/e-port/shipping-aggregator/internal/observability"
 	redisrepo "github.com/e-port/shipping-aggregator/internal/repository/redis"
+
+	// Import all provider adapters to register them with the global factory.
+	// This ensures all implemented carrier adapters are available for use.
+	_ "github.com/e-port/shipping-aggregator/internal/provider/all"
 )
 
 // Build information (set via ldflags).

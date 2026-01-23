@@ -415,7 +415,7 @@
 - [ ] T209 [P] Implement internal/api/integration/kolaygelsin.go with Kolaygelsin tracking webhook handler
 - [ ] T210 [P] Implement internal/api/integration/sendeo.go with Sendeo tracking webhook handler
 - [ ] T211 [P] Implement internal/api/integration/pakettaxi.go with Pakettaxi tracking webhook handler
-- [ ] T212 Register all provider adapters in internal/provider/factory.go
+- [x] T212 Register all provider adapters in internal/provider/factory.go
 
 **Checkpoint**: All 9 carrier adapters implemented
 
