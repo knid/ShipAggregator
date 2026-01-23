@@ -393,9 +393,9 @@
 
 **Purpose**: Implement remaining carrier adapters
 
-- [ ] T190 [P] Implement internal/provider/surat/adapter.go with Sürat SOAP adapter
-- [ ] T191 [P] Implement internal/provider/surat/types.go with Sürat-specific types
-- [ ] T192 [P] Implement internal/provider/surat/mapping.go with status code mapping
+- [x] T190 [P] Implement internal/provider/surat/adapter.go with Sürat SOAP adapter
+- [x] T191 [P] Implement internal/provider/surat/types.go with Sürat-specific types
+- [x] T192 [P] Implement internal/provider/surat/mapping.go with status code mapping
 - [ ] T193 [P] Implement internal/provider/ptt/adapter.go with PTT SOAP adapter
 - [ ] T194 [P] Implement internal/provider/ptt/types.go with PTT-specific types
 - [ ] T195 [P] Implement internal/provider/ptt/mapping.go with status code mapping
