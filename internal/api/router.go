@@ -525,16 +525,16 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 
 		// Provider Accounts routes (US2: Bring Your Own Account)
 		r.Route("/provider-accounts", func(r chi.Router) {
-			r.Use(middleware.RequireScope("provider-accounts:read"))
+			r.Use(middleware.RequireScope("provider_accounts:read"))
 			if providerAccountHandler != nil {
 				r.Get("/", providerAccountHandler.ListProviderAccounts)
-				r.With(middleware.RequireScope("provider-accounts:write")).Post("/", providerAccountHandler.CreateProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:create")).Post("/", providerAccountHandler.CreateProviderAccount)
 				r.Get("/{id}", providerAccountHandler.GetProviderAccount)
-				r.With(middleware.RequireScope("provider-accounts:write")).Put("/{id}", providerAccountHandler.UpdateProviderAccount)
-				r.With(middleware.RequireScope("provider-accounts:write")).Delete("/{id}", providerAccountHandler.DeleteProviderAccount)
-				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/verify", providerAccountHandler.VerifyProviderAccount)
-				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/set-default", providerAccountHandler.SetDefaultProviderAccount)
-				r.With(middleware.RequireScope("provider-accounts:write")).Post("/{id}/suspend", providerAccountHandler.SuspendProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:update")).Put("/{id}", providerAccountHandler.UpdateProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:delete")).Delete("/{id}", providerAccountHandler.DeleteProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:verify")).Post("/{id}/verify", providerAccountHandler.VerifyProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:update")).Post("/{id}/set-default", providerAccountHandler.SetDefaultProviderAccount)
+				r.With(middleware.RequireScope("provider_accounts:update")).Post("/{id}/suspend", providerAccountHandler.SuspendProviderAccount)
 			}
 		})
 
