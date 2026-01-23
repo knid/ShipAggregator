@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: ShipAggregator API
+  title: KargoNet API
   description: |
     TR-Only Shipping Aggregation Backend API.
     
@@ -24,15 +24,15 @@ info:
   version: 1.0.0
   contact:
     name: API Support
-    email: api-support@shipaggregator.com
+    email: api-support@kargonet.com
   license:
     name: Proprietary
-    url: https://shipaggregator.com/terms
+    url: https://kargonet.com/terms
 
 servers:
-  - url: https://api.shipaggregator.com/v1
+  - url: https://api.kargonet.com/v1
     description: Production
-  - url: https://api.sandbox.shipaggregator.com/v1
+  - url: https://api.sandbox.kargonet.com/v1
     description: Sandbox
 
 tags:
@@ -2340,7 +2340,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: "https://api.shipaggregator.com/errors/auth-invalid"
+            type: "https://api.kargonet.com/errors/auth-invalid"
             title: "Authentication Required"
             status: 401
             detail: "Invalid or missing authentication credentials"
@@ -2354,7 +2354,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: "https://api.shipaggregator.com/errors/forbidden"
+            type: "https://api.kargonet.com/errors/forbidden"
             title: "Forbidden"
             status: 403
             detail: "You do not have permission to perform this action"
@@ -2368,7 +2368,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: "https://api.shipaggregator.com/errors/not-found"
+            type: "https://api.kargonet.com/errors/not-found"
             title: "Not Found"
             status: 404
             detail: "The requested resource was not found"
@@ -2382,7 +2382,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
           example:
-            type: "https://api.shipaggregator.com/errors/conflict"
+            type: "https://api.kargonet.com/errors/conflict"
             title: "Conflict"
             status: 409
             detail: "The request conflicts with the current state"
@@ -2396,7 +2396,7 @@ components:
           schema:
             $ref: '#/components/schemas/ValidationProblemDetails'
           example:
-            type: "https://api.shipaggregator.com/errors/validation-failed"
+            type: "https://api.kargonet.com/errors/validation-failed"
             title: "Validation Failed"
             status: 422
             detail: "One or more fields failed validation"
