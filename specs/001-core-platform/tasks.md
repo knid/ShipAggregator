@@ -308,10 +308,10 @@
 
 ### Implementation for User Story 6
 
-- [ ] T166 [P] [US6] Update internal/service/auth/apikey.go with key rotation and grace period logic
-- [ ] T167 [US6] Implement internal/api/handler/apikey.go with CRUD endpoints for /api-keys
-- [ ] T168 [US6] Implement internal/api/handler/apikey.go POST /api-keys/{id}/rotate endpoint
-- [ ] T169 [US6] Register routes for US6 endpoints in internal/api/router.go
+- [X] T166 [P] [US6] Update internal/service/auth/apikey.go with key rotation and grace period logic
+- [X] T167 [US6] Implement internal/api/handler/apikey.go with CRUD endpoints for /api-keys
+- [X] T168 [US6] Implement internal/api/handler/apikey.go POST /api-keys/{id}/rotate endpoint
+- [X] T169 [US6] Register routes for US6 endpoints in internal/api/router.go
 
 **Checkpoint**: API key management with rotation functional
 

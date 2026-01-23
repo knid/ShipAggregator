@@ -17,6 +17,7 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/payment/iyzico"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/repository/redis"
+	"github.com/e-port/shipping-aggregator/internal/service/auth"
 	"github.com/e-port/shipping-aggregator/internal/service/billing"
 	providerservice "github.com/e-port/shipping-aggregator/internal/service/provider"
 	"github.com/e-port/shipping-aggregator/internal/service/quote"
@@ -71,6 +72,8 @@ type RouterConfig struct {
 	TrackingService *tracking.Service
 	// WebhookPublisher is the webhook publisher (US5: Webhooks).
 	WebhookPublisher *webhook.Publisher
+	// APIKeyService is the API key service (US6: API Key Management).
+	APIKeyService *auth.APIKeyService
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -233,6 +236,12 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		)
 	}
 
+	// Initialize API key handler (US6: API Key Management)
+	var apiKeyHandler *handler.APIKeyHandler
+	if cfg.APIKeyService != nil {
+		apiKeyHandler = handler.NewAPIKeyHandler(cfg.APIKeyService, cfg.Logger)
+	}
+
 	// API v1 routes
 	r.Route("/v1", func(r chi.Router) {
 		// Authentication middleware for all v1 routes
@@ -356,6 +365,18 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Post("/members", organizationHandler.InviteMember)
 			// r.Get("/api-keys", organizationHandler.ListAPIKeys)
 			// r.Post("/api-keys", organizationHandler.CreateAPIKey)
+		})
+
+		// API Keys routes (US6: API Key Management)
+		r.Route("/api-keys", func(r chi.Router) {
+			if apiKeyHandler != nil {
+				r.Get("/", apiKeyHandler.ListAPIKeys)
+				r.Post("/", apiKeyHandler.CreateAPIKey)
+				r.Get("/{id}", apiKeyHandler.GetAPIKey)
+				r.Patch("/{id}", apiKeyHandler.UpdateAPIKey)
+				r.Delete("/{id}", apiKeyHandler.RevokeAPIKey)
+				r.Post("/{id}/rotate", apiKeyHandler.RotateAPIKey)
+			}
 		})
 
 		// Billing routes (US3: COD Settlements, US4: Wallet Top-Up)
