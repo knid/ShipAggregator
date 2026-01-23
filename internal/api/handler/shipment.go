@@ -431,6 +431,150 @@ func (h *ShipmentHandler) handleReturnError(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// SchedulePickupRequest represents the request body for scheduling a pickup.
+type SchedulePickupRequest struct {
+	ScheduledDate   string `json:"scheduled_date"`
+	TimeWindowStart string `json:"time_window_start,omitempty"`
+	TimeWindowEnd   string `json:"time_window_end,omitempty"`
+	Instructions    string `json:"instructions,omitempty"`
+}
+
+// SchedulePickupResponse represents the response for scheduling a pickup.
+type SchedulePickupResponse struct {
+	Shipment        ShipmentResponse `json:"shipment"`
+	PickupID        string           `json:"pickup_id"`
+	ConfirmedDate   string           `json:"confirmed_date"`
+	TimeWindowStart string           `json:"time_window_start,omitempty"`
+	TimeWindowEnd   string           `json:"time_window_end,omitempty"`
+}
+
+// SchedulePickup handles POST /shipments/{id}/pickup
+// Schedules a pickup for a shipment.
+func (h *ShipmentHandler) SchedulePickup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get organization ID from context
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	// Get shipment ID from URL
+	shipmentIDStr := chi.URLParam(r, "id")
+	shipmentID, err := uuid.Parse(shipmentIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid shipment ID"))
+		return
+	}
+
+	var req SchedulePickupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid request body"))
+		return
+	}
+
+	// Validate required fields
+	var fieldErrors []ErrorDetail
+	if req.ScheduledDate == "" {
+		fieldErrors = append(fieldErrors, NewFieldError("scheduled_date", "REQUIRED", "Scheduled date is required"))
+	}
+
+	if len(fieldErrors) > 0 {
+		WriteError(w, r, NewValidationError("Validation failed", fieldErrors))
+		return
+	}
+
+	// Parse scheduled date
+	scheduledDate, err := time.Parse(time.RFC3339, req.ScheduledDate)
+	if err != nil {
+		// Try parsing as date only
+		scheduledDate, err = time.Parse("2006-01-02", req.ScheduledDate)
+		if err != nil {
+			WriteError(w, r, NewValidationError("Invalid date format", []ErrorDetail{
+				NewFieldError("scheduled_date", "INVALID_FORMAT", "Scheduled date must be in RFC3339 or YYYY-MM-DD format"),
+			}))
+			return
+		}
+	}
+
+	// Validate scheduled date is in the future
+	if scheduledDate.Before(time.Now().Truncate(24 * time.Hour)) {
+		WriteError(w, r, NewValidationError("Invalid date", []ErrorDetail{
+			NewFieldError("scheduled_date", "INVALID_VALUE", "Scheduled date must be today or in the future"),
+		}))
+		return
+	}
+
+	// Get actor info from context
+	actorID, actorType := getActorFromContext(ctx)
+
+	// Schedule pickup
+	result, err := h.shipmentService.SchedulePickup(ctx, &shipment.SchedulePickupRequest{
+		ShipmentID:      shipmentID,
+		OrganizationID:  orgID,
+		ScheduledDate:   scheduledDate,
+		TimeWindowStart: req.TimeWindowStart,
+		TimeWindowEnd:   req.TimeWindowEnd,
+		Instructions:    req.Instructions,
+		ActorID:         actorID,
+		ActorType:       actorType,
+	})
+	if err != nil {
+		h.handlePickupError(w, r, err)
+		return
+	}
+
+	response := SchedulePickupResponse{
+		Shipment:        shipmentToResponse(result.Shipment),
+		PickupID:        result.PickupID,
+		ConfirmedDate:   result.ConfirmedDate.Format(time.RFC3339),
+		TimeWindowStart: result.TimeWindowStart,
+		TimeWindowEnd:   result.TimeWindowEnd,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handlePickupError handles errors specific to pickup scheduling operations.
+func (h *ShipmentHandler) handlePickupError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, shipment.ErrShipmentNotFound):
+		WriteError(w, r, NewNotFoundError("Shipment"))
+	case errors.Is(err, shipment.ErrPickupAlreadyScheduled):
+		WriteError(w, r, NewConflictError("A pickup has already been scheduled for this shipment"))
+	case errors.Is(err, shipment.ErrCannotSchedulePickup):
+		WriteError(w, r, &ProblemDetails{
+			Type:   ErrorTypeValidation,
+			Title:  "Cannot Schedule Pickup",
+			Status: http.StatusUnprocessableEntity,
+			Detail: "Pickup can only be scheduled for shipments with purchased labels",
+			Code:   CodeValidationError,
+		})
+	case errors.Is(err, shipment.ErrPickupSchedulingFailed):
+		WriteError(w, r, &ProblemDetails{
+			Type:   ErrorTypeProviderError,
+			Title:  "Pickup Scheduling Failed",
+			Status: http.StatusBadGateway,
+			Detail: "An error occurred while scheduling pickup with the shipping provider",
+			Code:   CodeProviderError,
+		})
+	case errors.Is(err, shipment.ErrProviderAccountNotFound):
+		WriteError(w, r, NewNotFoundError("Provider Account"))
+	case errors.Is(err, shipment.ErrProviderAccountInvalid):
+		WriteError(w, r, &ProblemDetails{
+			Type:   ErrorTypeValidation,
+			Title:  "Invalid Provider Account",
+			Status: http.StatusUnprocessableEntity,
+			Detail: "The provider account is not verified",
+			Code:   CodeValidationError,
+		})
+	default:
+		h.logger.Error("Pickup scheduling operation failed", "error", err)
+		WriteError(w, r, NewInternalError("Failed to schedule pickup"))
+	}
+}
+
 // GetTracking handles GET /shipments/{id}/tracking
 // Returns the tracking history for a shipment.
 func (h *ShipmentHandler) GetTracking(w http.ResponseWriter, r *http.Request) {

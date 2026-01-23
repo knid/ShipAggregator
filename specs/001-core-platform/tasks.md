@@ -359,9 +359,9 @@
 
 ### Implementation for User Story 9
 
-- [ ] T178 [P] [US9] Update internal/service/shipment/service.go with SchedulePickup operation
-- [ ] T179 [US9] Implement POST /shipments/{id}/pickup endpoint in internal/api/handler/shipment.go
-- [ ] T180 [US9] Register routes for US9 endpoints in internal/api/router.go
+- [X] T178 [P] [US9] Update internal/service/shipment/service.go with SchedulePickup operation
+- [X] T179 [US9] Implement POST /shipments/{id}/pickup endpoint in internal/api/handler/shipment.go
+- [X] T180 [US9] Register routes for US9 endpoints in internal/api/router.go
 
 **Checkpoint**: Pickup scheduling functional
 

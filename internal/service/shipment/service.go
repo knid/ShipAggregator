@@ -1002,3 +1002,164 @@ func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelReq
 		LabelDocument:  labelDocument,
 	}, nil
 }
+
+// SchedulePickupRequest represents a request to schedule a pickup for a shipment.
+type SchedulePickupRequest struct {
+	ShipmentID      uuid.UUID
+	OrganizationID  uuid.UUID
+	ScheduledDate   time.Time
+	TimeWindowStart string
+	TimeWindowEnd   string
+	Instructions    string
+	ActorID         *uuid.UUID
+	ActorType       domain.ActorType
+}
+
+// SchedulePickupResult represents the result of scheduling a pickup.
+type SchedulePickupResult struct {
+	Shipment        *db.Shipment
+	PickupID        string
+	ConfirmedDate   time.Time
+	TimeWindowStart string
+	TimeWindowEnd   string
+}
+
+// ErrPickupAlreadyScheduled indicates a pickup has already been scheduled for this shipment.
+var ErrPickupAlreadyScheduled = errors.New("pickup already scheduled for this shipment")
+
+// ErrCannotSchedulePickup indicates the shipment cannot have a pickup scheduled.
+var ErrCannotSchedulePickup = errors.New("cannot schedule pickup for this shipment")
+
+// ErrPickupSchedulingFailed indicates the pickup scheduling failed with the provider.
+var ErrPickupSchedulingFailed = errors.New("pickup scheduling failed")
+
+// SchedulePickup schedules a pickup for a shipment.
+// The shipment must be in label_purchased status to schedule a pickup.
+func (s *Service) SchedulePickup(ctx context.Context, req *SchedulePickupRequest) (*SchedulePickupResult, error) {
+	// Get shipment
+	shipment, err := s.queries.GetShipmentForUpdate(ctx, req.ShipmentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrShipmentNotFound
+		}
+		return nil, fmt.Errorf("failed to get shipment: %w", err)
+	}
+
+	// Verify organization ownership
+	if shipment.OrganizationID != req.OrganizationID {
+		return nil, ErrShipmentNotFound
+	}
+
+	// Check if shipment can have pickup scheduled
+	status := domain.ShipmentStatus(shipment.Status)
+	if !status.CanSchedulePickup() {
+		if shipment.PickupScheduledAt.Valid {
+			return nil, ErrPickupAlreadyScheduled
+		}
+		return nil, ErrCannotSchedulePickup
+	}
+
+	// Verify shipment has tracking number (label purchased)
+	if shipment.ProviderTrackingNumber == nil || *shipment.ProviderTrackingNumber == "" {
+		return nil, ErrCannotSchedulePickup
+	}
+
+	// Determine if this is a BYOA shipment
+	isBYOA := !shipment.IsMarketplace && shipment.ProviderAccountID.Valid
+
+	// Parse origin address for pickup location
+	var originAddress domain.AddressSnapshot
+	if err := json.Unmarshal(shipment.OriginAddress, &originAddress); err != nil {
+		return nil, fmt.Errorf("failed to parse origin address: %w", err)
+	}
+
+	// Parse parcel for weight info
+	var parcel domain.Parcel
+	if err := json.Unmarshal(shipment.Parcel, &parcel); err != nil {
+		return nil, fmt.Errorf("failed to parse parcel: %w", err)
+	}
+
+	// Get provider adapter
+	providerCode := domain.ProviderCode(shipment.ProviderCode)
+	adapter, err := s.adapterPool.Get(providerCode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider adapter: %w", err)
+	}
+
+	// Build schedule pickup request
+	pickupReq := provider.SchedulePickupRequest{
+		Address:          originAddress,
+		ScheduledDate:    req.ScheduledDate,
+		TimeWindowStart:  req.TimeWindowStart,
+		TimeWindowEnd:    req.TimeWindowEnd,
+		ShipmentIDs:      []string{},
+		TrackingNumbers:  []string{*shipment.ProviderTrackingNumber},
+		ParcelCount:      1,
+		TotalWeightGrams: int(parcel.WeightGrams),
+		Instructions:     req.Instructions,
+	}
+
+	if shipment.ProviderShipmentID != nil && *shipment.ProviderShipmentID != "" {
+		pickupReq.ShipmentIDs = []string{*shipment.ProviderShipmentID}
+	}
+
+	// For BYOA shipments, get and use customer credentials
+	if isBYOA && s.accountService != nil {
+		account, err := s.accountService.GetAccount(ctx, shipment.ProviderAccountID.Bytes, req.OrganizationID)
+		if err != nil {
+			if errors.Is(err, providerservice.ErrAccountNotFound) {
+				return nil, ErrProviderAccountNotFound
+			}
+			return nil, fmt.Errorf("failed to get provider account: %w", err)
+		}
+
+		if account.Status != domain.ProviderAccountStatusVerified.String() {
+			return nil, ErrProviderAccountInvalid
+		}
+
+		credentials, err := s.accountService.DecryptCredentials(ctx, account)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+		}
+
+		pickupReq.Credentials = credentials
+		_ = s.accountService.RecordUsage(ctx, account.ID)
+	}
+
+	// Schedule pickup with provider
+	pickupResp, err := adapter.SchedulePickup(ctx, pickupReq)
+	if err != nil {
+		s.logger.Error("Provider pickup scheduling failed",
+			"error", err,
+			"shipment_id", shipment.ID,
+			"provider_code", shipment.ProviderCode,
+			"scheduled_date", req.ScheduledDate,
+		)
+		return nil, fmt.Errorf("%w: %v", ErrPickupSchedulingFailed, err)
+	}
+
+	// Update shipment with pickup scheduled
+	updatedShipment, err := s.queries.UpdateShipmentPickupScheduled(ctx, db.UpdateShipmentPickupScheduledParams{
+		ID:                shipment.ID,
+		PickupScheduledAt: pgtype.Timestamptz{Time: pickupResp.ConfirmedDate, Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update shipment: %w", err)
+	}
+
+	s.logger.Info("Pickup scheduled successfully",
+		"shipment_id", shipment.ID,
+		"pickup_id", pickupResp.PickupID,
+		"confirmed_date", pickupResp.ConfirmedDate,
+		"provider_code", shipment.ProviderCode,
+		"is_byoa", isBYOA,
+	)
+
+	return &SchedulePickupResult{
+		Shipment:        updatedShipment,
+		PickupID:        pickupResp.PickupID,
+		ConfirmedDate:   pickupResp.ConfirmedDate,
+		TimeWindowStart: pickupResp.TimeWindowStart,
+		TimeWindowEnd:   pickupResp.TimeWindowEnd,
+	}, nil
+}
