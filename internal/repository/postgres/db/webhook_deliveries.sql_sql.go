@@ -66,6 +66,19 @@ func (q *Queries) CountWebhookDeliveriesByStatus(ctx context.Context, organizati
 	return items, nil
 }
 
+const countWebhookDeliveriesByStatusSingle = `-- name: CountWebhookDeliveriesByStatusSingle :one
+SELECT COUNT(*) as total
+FROM webhook_deliveries
+WHERE status = $1
+`
+
+func (q *Queries) CountWebhookDeliveriesByStatusSingle(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countWebhookDeliveriesByStatusSingle, status)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countWebhookEventsByOrganization = `-- name: CountWebhookEventsByOrganization :one
 SELECT COUNT(*) as total
 FROM webhook_events
@@ -502,6 +515,58 @@ func (q *Queries) ListWebhookDeliveriesByOrganization(ctx context.Context, arg L
 			&i.EventType,
 			&i.ResourceType,
 			&i.ResourceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWebhookDeliveriesByStatus = `-- name: ListWebhookDeliveriesByStatus :many
+SELECT id, event_id, subscription_id, endpoint_url, status, attempts,
+       last_attempt_at, next_retry_at, response_status, response_body_preview,
+       response_time_ms, error_message, created_at, updated_at
+FROM webhook_deliveries
+WHERE status = $1
+ORDER BY created_at DESC
+LIMIT $3::int
+OFFSET $2::int
+`
+
+type ListWebhookDeliveriesByStatusParams struct {
+	Status      string `db:"status" json:"status"`
+	OffsetCount int32  `db:"offset_count" json:"offset_count"`
+	LimitCount  int32  `db:"limit_count" json:"limit_count"`
+}
+
+func (q *Queries) ListWebhookDeliveriesByStatus(ctx context.Context, arg ListWebhookDeliveriesByStatusParams) ([]*WebhookDelivery, error) {
+	rows, err := q.db.Query(ctx, listWebhookDeliveriesByStatus, arg.Status, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*WebhookDelivery{}
+	for rows.Next() {
+		var i WebhookDelivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.SubscriptionID,
+			&i.EndpointUrl,
+			&i.Status,
+			&i.Attempts,
+			&i.LastAttemptAt,
+			&i.NextRetryAt,
+			&i.ResponseStatus,
+			&i.ResponseBodyPreview,
+			&i.ResponseTimeMs,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -476,3 +476,63 @@ type DeliveryStats struct {
 	InDLQ     int64            `json:"in_dlq"`
 	ByStatus  map[string]int64 `json:"by_status"`
 }
+
+// ReprocessDLQResult represents the result of reprocessing DLQ items.
+type ReprocessDLQResult struct {
+	Reprocessed int
+	Failed      int
+	Errors      []string
+}
+
+// ReprocessAllDLQ reprocesses all items in the DLQ up to the specified limit.
+func (s *DeliveryService) ReprocessAllDLQ(ctx context.Context, limit int32) (*ReprocessDLQResult, error) {
+	result := &ReprocessDLQResult{}
+
+	// Get DLQ items
+	dlqStatus := string(domain.WebhookDeliveryStatusDLQ)
+	deliveries, err := s.queries.ListWebhookDeliveriesByStatus(ctx, db.ListWebhookDeliveriesByStatusParams{
+		Status:     dlqStatus,
+		LimitCount: limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, delivery := range deliveries {
+		_, err := s.ReplayDelivery(ctx, delivery.ID)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("delivery %s: %v", delivery.ID, err))
+		} else {
+			result.Reprocessed++
+		}
+	}
+
+	s.logger.Info("Reprocessed DLQ items",
+		"reprocessed", result.Reprocessed,
+		"failed", result.Failed,
+	)
+
+	return result, nil
+}
+
+// ListDLQ retrieves webhook deliveries in the DLQ.
+func (s *DeliveryService) ListDLQ(ctx context.Context, offset, limit int32) ([]*db.WebhookDelivery, int64, error) {
+	dlqStatus := string(domain.WebhookDeliveryStatusDLQ)
+
+	deliveries, err := s.queries.ListWebhookDeliveriesByStatus(ctx, db.ListWebhookDeliveriesByStatusParams{
+		Status:      dlqStatus,
+		OffsetCount: offset,
+		LimitCount:  limit,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, err := s.queries.CountWebhookDeliveriesByStatusSingle(ctx, dlqStatus)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return deliveries, total, nil
+}

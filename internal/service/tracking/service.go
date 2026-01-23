@@ -502,6 +502,104 @@ func (s *Service) RebuildTrackingHistory(ctx context.Context, shipmentID uuid.UU
 	return nil
 }
 
+// RebuildResult represents the result of rebuilding tracking.
+type RebuildResult struct {
+	EventsAdded   int
+	EventsUpdated int
+	CurrentStatus string
+}
+
+// RebuildTracking rebuilds tracking history for a shipment.
+// If force is true, it will delete existing events and rebuild from scratch.
+func (s *Service) RebuildTracking(ctx context.Context, shipmentID uuid.UUID, force bool) (*RebuildResult, error) {
+	// Get shipment
+	shipment, err := s.queries.GetShipmentByID(ctx, shipmentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrShipmentNotFound
+		}
+		return nil, err
+	}
+
+	result := &RebuildResult{
+		CurrentStatus: shipment.Status,
+	}
+
+	if force {
+		// Delete existing events
+		if err := s.queries.DeleteTrackingEventsByShipment(ctx, shipmentID); err != nil {
+			return nil, err
+		}
+		s.logger.Info("Deleted tracking events for rebuild", "shipment_id", shipmentID)
+	}
+
+	// Note: In a real implementation, this would call the provider's tracking API
+	// to fetch the latest tracking events and process them.
+	// For now, we just return the current state.
+
+	// Count existing events
+	events, err := s.queries.ListTrackingEventsByShipment(ctx, shipmentID)
+	if err != nil {
+		return nil, err
+	}
+	result.EventsAdded = len(events)
+
+	return result, nil
+}
+
+// PollResult represents the result of polling tracking updates.
+type PollResult struct {
+	Polled  int
+	Updated int
+	Failed  int
+	Errors  []string
+}
+
+// PollAllForProvider polls tracking updates for all active shipments of a provider.
+func (s *Service) PollAllForProvider(ctx context.Context, providerCode string, maxItems int) (*PollResult, error) {
+	result := &PollResult{}
+
+	// Get active shipments for this provider
+	shipments, err := s.queries.ListActiveShipmentsByProvider(ctx, db.ListActiveShipmentsByProviderParams{
+		ProviderCode: providerCode,
+		LimitCount:   int32(maxItems),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result.Polled = len(shipments)
+
+	// Note: In a real implementation, this would call the provider's tracking API
+	// for each shipment and process the results.
+	// For now, we just return the count.
+
+	s.logger.Info("Polled tracking for provider",
+		"provider", providerCode,
+		"polled", result.Polled,
+	)
+
+	return result, nil
+}
+
+// PollTrackingNumbers polls tracking updates for specific tracking numbers.
+func (s *Service) PollTrackingNumbers(ctx context.Context, providerCode string, trackingNumbers []string) (*PollResult, error) {
+	result := &PollResult{
+		Polled: len(trackingNumbers),
+	}
+
+	// Note: In a real implementation, this would call the provider's tracking API
+	// for each tracking number and process the results.
+	// For now, we just return the count.
+
+	s.logger.Info("Polled tracking numbers",
+		"provider", providerCode,
+		"count", len(trackingNumbers),
+	)
+
+	return result, nil
+}
+
 // dbEventToDomain converts a database tracking event to a domain tracking event.
 func dbEventToDomain(e *db.TrackingEvent) *domain.TrackingEvent {
 	event := &domain.TrackingEvent{

@@ -375,15 +375,15 @@
 
 ### Implementation for User Story 10
 
-- [ ] T181 [P] [US10] Implement internal/repository/postgres/audit.go with audit log repository
-- [ ] T182 [P] [US10] Implement internal/repository/postgres/provider_logs.go with provider API log repository
-- [ ] T183 [US10] Implement internal/api/handler/admin.go with GET /admin/audit-logs endpoint
-- [ ] T184 [US10] Implement internal/api/handler/admin.go with GET /admin/provider-logs endpoint
-- [ ] T185 [US10] Implement internal/api/handler/admin.go with GET /admin/health/providers endpoint
-- [ ] T186 [US10] Implement internal/api/handler/admin.go with POST /admin/webhooks/dlq/reprocess endpoint
-- [ ] T187 [US10] Implement internal/api/handler/admin.go with POST /admin/shipments/{id}/rebuild-tracking endpoint
-- [ ] T188 [US10] Implement internal/api/handler/admin.go with POST /integrations/{provider}/poll-tracking endpoint
-- [ ] T189 [US10] Register routes for US10 endpoints in internal/api/router.go
+- [X] T181 [P] [US10] Implement internal/repository/postgres/audit.go with audit log repository
+- [X] T182 [P] [US10] Implement internal/repository/postgres/provider_logs.go with provider API log repository
+- [X] T183 [US10] Implement internal/api/handler/admin.go with GET /admin/audit-logs endpoint
+- [X] T184 [US10] Implement internal/api/handler/admin.go with GET /admin/provider-logs endpoint
+- [X] T185 [US10] Implement internal/api/handler/admin.go with GET /admin/health/providers endpoint
+- [X] T186 [US10] Implement internal/api/handler/admin.go with POST /admin/webhooks/dlq/reprocess endpoint
+- [X] T187 [US10] Implement internal/api/handler/admin.go with POST /admin/shipments/{id}/rebuild-tracking endpoint
+- [X] T188 [US10] Implement internal/api/handler/admin.go with POST /integrations/{provider}/poll-tracking endpoint
+- [X] T189 [US10] Register routes for US10 endpoints in internal/api/router.go
 
 **Checkpoint**: Admin operations functional
 

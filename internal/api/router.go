@@ -15,6 +15,7 @@ import (
 	"github.com/e-port/shipping-aggregator/internal/api/middleware"
 	"github.com/e-port/shipping-aggregator/internal/observability"
 	"github.com/e-port/shipping-aggregator/internal/payment/iyzico"
+	"github.com/e-port/shipping-aggregator/internal/repository/postgres"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 	"github.com/e-port/shipping-aggregator/internal/repository/redis"
 	"github.com/e-port/shipping-aggregator/internal/service/auth"
@@ -72,8 +73,14 @@ type RouterConfig struct {
 	TrackingService *tracking.Service
 	// WebhookPublisher is the webhook publisher (US5: Webhooks).
 	WebhookPublisher *webhook.Publisher
+	// WebhookDeliveryService is the webhook delivery service (US5: Webhooks).
+	WebhookDeliveryService *webhook.DeliveryService
 	// APIKeyService is the API key service (US6: API Key Management).
 	APIKeyService *auth.APIKeyService
+	// AuditLogRepository is the audit log repository (US10: Admin Tools).
+	AuditLogRepository *postgres.AuditLogRepository
+	// ProviderAPILogRepository is the provider API log repository (US10: Admin Tools).
+	ProviderAPILogRepository *postgres.ProviderAPILogRepository
 	// CORSAllowedOrigins are the allowed CORS origins.
 	CORSAllowedOrigins []string
 	// RateLimitPerMinute is the default rate limit per minute.
@@ -240,6 +247,19 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	var apiKeyHandler *handler.APIKeyHandler
 	if cfg.APIKeyService != nil {
 		apiKeyHandler = handler.NewAPIKeyHandler(cfg.APIKeyService, cfg.Logger)
+	}
+
+	// Initialize admin handler (US10: Admin Tools)
+	var adminHandler *handler.AdminHandler
+	if cfg.AuditLogRepository != nil && cfg.ProviderAPILogRepository != nil {
+		adminHandler = handler.NewAdminHandler(
+			cfg.AuditLogRepository,
+			cfg.ProviderAPILogRepository,
+			cfg.Queries,
+			cfg.TrackingService,
+			cfg.WebhookDeliveryService,
+			cfg.Logger,
+		)
 	}
 
 	// API v1 routes
@@ -458,6 +478,32 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			// r.Get("/cities/{cityCode}/districts", referenceHandler.ListDistricts)
 			// r.Get("/districts/{districtCode}/neighborhoods", referenceHandler.ListNeighborhoods)
 		})
+
+		// Admin routes (US10: Admin Tools)
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.RequireScope("admin:read"))
+			if adminHandler != nil {
+				// Audit logs (T183)
+				r.Get("/audit-logs", adminHandler.ListAuditLogs)
+				r.Get("/audit-logs/summary", adminHandler.GetAuditLogSummary)
+				r.Get("/audit-logs/{id}", adminHandler.GetAuditLog)
+
+				// Provider logs (T184)
+				r.Get("/provider-logs", adminHandler.ListProviderLogs)
+				r.Get("/provider-logs/{id}", adminHandler.GetProviderLog)
+
+				// Provider health (T185)
+				r.Get("/health/providers", adminHandler.GetProviderHealth)
+				r.Get("/health/providers/{provider_code}", adminHandler.GetProviderHealthDetail)
+
+				// Webhook DLQ (T186)
+				r.Get("/webhooks/dlq", adminHandler.ListDLQ)
+				r.With(middleware.RequireScope("admin:write")).Post("/webhooks/dlq/reprocess", adminHandler.ReprocessDLQ)
+
+				// Shipment tracking rebuild (T187)
+				r.With(middleware.RequireScope("admin:write")).Post("/shipments/{id}/rebuild-tracking", adminHandler.RebuildTracking)
+			}
+		})
 	})
 
 	// Webhook receiver endpoints (for provider callbacks)
@@ -501,6 +547,22 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 			if hepsijetWebhookHandler != nil {
 				r.Post("/hepsijet", hepsijetWebhookHandler.HandleWebhook)
+			}
+		})
+
+		// US10: Admin poll tracking endpoint (T188)
+		// This requires admin authentication
+		r.Route("/{provider}", func(r chi.Router) {
+			// Add auth middleware for admin operations
+			r.Use(middleware.Auth(middleware.AuthConfig{
+				APIKeyValidator:  cfg.APIKeyValidator,
+				SessionValidator: cfg.SessionValidator,
+				Logger:           cfg.Logger,
+				RequireAuth:      true,
+			}))
+			r.Use(middleware.RequireScope("admin:write"))
+			if adminHandler != nil {
+				r.Post("/poll-tracking", adminHandler.PollTracking)
 			}
 		})
 	})

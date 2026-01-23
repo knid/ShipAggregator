@@ -233,6 +233,15 @@ WHERE status IN ('label_purchased', 'pickup_scheduled', 'picked_up', 'in_transit
 ORDER BY updated_at ASC
 LIMIT sqlc.arg('limit_count')::int;
 
+-- name: ListActiveShipmentsByProvider :many
+SELECT id, organization_id, provider_code, provider_tracking_number, status
+FROM shipments
+WHERE status IN ('label_purchased', 'pickup_scheduled', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
+  AND provider_tracking_number IS NOT NULL
+  AND provider_code = $1
+ORDER BY updated_at ASC
+LIMIT sqlc.arg('limit_count')::int;
+
 -- name: ListCODShipmentsPendingSettlement :many
 SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number, 
        s.cod_amount_kurus, s.status, s.delivered_at

@@ -45,12 +45,14 @@ type Querier interface {
 	CountOrganizations(ctx context.Context, status *string) (int64, error)
 	CountPendingOutboxMessages(ctx context.Context) (int64, error)
 	CountProviderAccountsByOrganization(ctx context.Context, arg CountProviderAccountsByOrganizationParams) (int64, error)
+	CountProviderApiLogs(ctx context.Context, arg CountProviderApiLogsParams) (int64, error)
 	CountQuotesByOrganization(ctx context.Context, arg CountQuotesByOrganizationParams) (int64, error)
 	CountShipmentsByOrganization(ctx context.Context, arg CountShipmentsByOrganizationParams) (int64, error)
 	CountTopupsByOrganization(ctx context.Context, arg CountTopupsByOrganizationParams) (int64, error)
 	CountTrackingEventsByShipment(ctx context.Context, shipmentID uuid.UUID) (int64, error)
 	CountWebhookDeliveriesByOrganization(ctx context.Context, arg CountWebhookDeliveriesByOrganizationParams) (int64, error)
 	CountWebhookDeliveriesByStatus(ctx context.Context, organizationID uuid.UUID) ([]*CountWebhookDeliveriesByStatusRow, error)
+	CountWebhookDeliveriesByStatusSingle(ctx context.Context, status string) (int64, error)
 	CountWebhookEndpointsByOrganization(ctx context.Context, organizationID uuid.UUID) (int64, error)
 	CountWebhookEventsByOrganization(ctx context.Context, arg CountWebhookEventsByOrganizationParams) (int64, error)
 	CountWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) (int64, error)
@@ -69,6 +71,7 @@ type Querier interface {
 	CreateOutboxMessage(ctx context.Context, arg CreateOutboxMessageParams) (*Outbox, error)
 	CreateOutboxMessagesBatch(ctx context.Context, arg []CreateOutboxMessagesBatchParams) (int64, error)
 	CreateProviderAccount(ctx context.Context, arg CreateProviderAccountParams) (*ProviderAccount, error)
+	CreateProviderApiLog(ctx context.Context, arg CreateProviderApiLogParams) (*ProviderApiLog, error)
 	CreateQuote(ctx context.Context, arg CreateQuoteParams) (*Quote, error)
 	CreateReturnShipment(ctx context.Context, arg CreateReturnShipmentParams) (*Shipment, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (*Role, error)
@@ -91,6 +94,7 @@ type Querier interface {
 	DeleteOffersByQuote(ctx context.Context, quoteID uuid.UUID) error
 	DeleteOldAuditLogs(ctx context.Context) error
 	DeleteOldOutboxMessages(ctx context.Context) error
+	DeleteOldProviderApiLogs(ctx context.Context) error
 	DeleteOldWebhookDeliveries(ctx context.Context) error
 	DeleteOldWebhookEvents(ctx context.Context) error
 	DeleteOldestSessionsByMember(ctx context.Context, arg DeleteOldestSessionsByMemberParams) error
@@ -198,6 +202,12 @@ type Querier interface {
 	// Table: provider_accounts
 	GetProviderAccountByID(ctx context.Context, id uuid.UUID) (*ProviderAccount, error)
 	GetProviderAccountsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]*ProviderAccount, error)
+	// Provider API Logs queries (INSERT and READ only)
+	// Table: provider_api_logs
+	GetProviderApiLogByID(ctx context.Context, id uuid.UUID) (*ProviderApiLog, error)
+	GetProviderApiLogErrorSummary(ctx context.Context, arg GetProviderApiLogErrorSummaryParams) ([]*GetProviderApiLogErrorSummaryRow, error)
+	GetProviderApiLogStats(ctx context.Context, arg GetProviderApiLogStatsParams) ([]*GetProviderApiLogStatsRow, error)
+	GetProviderApiLogStatsByOperation(ctx context.Context, arg GetProviderApiLogStatsByOperationParams) ([]*GetProviderApiLogStatsByOperationRow, error)
 	// Providers read queries
 	// Tables: providers, provider_services, marketplace_rate_plans
 	GetProviderByCode(ctx context.Context, code string) (*Provider, error)
@@ -265,6 +275,7 @@ type Querier interface {
 	ListActiveOffersByQuote(ctx context.Context, quoteID uuid.UUID) ([]*Offer, error)
 	ListActiveProviderServices(ctx context.Context, providerCode string) ([]*ProviderService, error)
 	ListActiveProviders(ctx context.Context) ([]*Provider, error)
+	ListActiveShipmentsByProvider(ctx context.Context, arg ListActiveShipmentsByProviderParams) ([]*ListActiveShipmentsByProviderRow, error)
 	ListActiveWebhookEndpointsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*WebhookEndpoint, error)
 	ListActiveWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) ([]*WebhookSubscription, error)
 	ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*Address, error)
@@ -303,6 +314,9 @@ type Querier interface {
 	ListPendingWebhookDeliveries(ctx context.Context, limitCount int32) ([]*WebhookDelivery, error)
 	ListPostalCodesByDistrict(ctx context.Context, districtCode string) ([]*RefPostalCode, error)
 	ListProviderAccountsByOrganization(ctx context.Context, arg ListProviderAccountsByOrganizationParams) ([]*ProviderAccount, error)
+	ListProviderApiLogs(ctx context.Context, arg ListProviderApiLogsParams) ([]*ProviderApiLog, error)
+	ListProviderApiLogsByProvider(ctx context.Context, arg ListProviderApiLogsByProviderParams) ([]*ProviderApiLog, error)
+	ListProviderApiLogsByTraceID(ctx context.Context, traceID *string) ([]*ProviderApiLog, error)
 	ListProviderServices(ctx context.Context, arg ListProviderServicesParams) ([]*ProviderService, error)
 	ListProviderServicesWithCOD(ctx context.Context, providerCode string) ([]*ProviderService, error)
 	ListProviderServicesWithReturn(ctx context.Context, providerCode string) ([]*ProviderService, error)
@@ -321,6 +335,7 @@ type Querier interface {
 	ListVerifiedProviderAccountsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*ProviderAccount, error)
 	ListWebhookDeliveriesByEvent(ctx context.Context, eventID uuid.UUID) ([]*WebhookDelivery, error)
 	ListWebhookDeliveriesByOrganization(ctx context.Context, arg ListWebhookDeliveriesByOrganizationParams) ([]*ListWebhookDeliveriesByOrganizationRow, error)
+	ListWebhookDeliveriesByStatus(ctx context.Context, arg ListWebhookDeliveriesByStatusParams) ([]*WebhookDelivery, error)
 	ListWebhookEndpointsByOrganization(ctx context.Context, arg ListWebhookEndpointsByOrganizationParams) ([]*WebhookEndpoint, error)
 	ListWebhookEventsByOrganization(ctx context.Context, arg ListWebhookEventsByOrganizationParams) ([]*WebhookEvent, error)
 	ListWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) ([]*WebhookSubscription, error)

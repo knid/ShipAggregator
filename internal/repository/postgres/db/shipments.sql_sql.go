@@ -454,6 +454,55 @@ func (q *Queries) GetShipmentForUpdate(ctx context.Context, id uuid.UUID) (*Ship
 	return &i, err
 }
 
+const listActiveShipmentsByProvider = `-- name: ListActiveShipmentsByProvider :many
+SELECT id, organization_id, provider_code, provider_tracking_number, status
+FROM shipments
+WHERE status IN ('label_purchased', 'pickup_scheduled', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
+  AND provider_tracking_number IS NOT NULL
+  AND provider_code = $1
+ORDER BY updated_at ASC
+LIMIT $2::int
+`
+
+type ListActiveShipmentsByProviderParams struct {
+	ProviderCode string `db:"provider_code" json:"provider_code"`
+	LimitCount   int32  `db:"limit_count" json:"limit_count"`
+}
+
+type ListActiveShipmentsByProviderRow struct {
+	ID                     uuid.UUID `db:"id" json:"id"`
+	OrganizationID         uuid.UUID `db:"organization_id" json:"organization_id"`
+	ProviderCode           string    `db:"provider_code" json:"provider_code"`
+	ProviderTrackingNumber *string   `db:"provider_tracking_number" json:"provider_tracking_number"`
+	Status                 string    `db:"status" json:"status"`
+}
+
+func (q *Queries) ListActiveShipmentsByProvider(ctx context.Context, arg ListActiveShipmentsByProviderParams) ([]*ListActiveShipmentsByProviderRow, error) {
+	rows, err := q.db.Query(ctx, listActiveShipmentsByProvider, arg.ProviderCode, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListActiveShipmentsByProviderRow{}
+	for rows.Next() {
+		var i ListActiveShipmentsByProviderRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ProviderCode,
+			&i.ProviderTrackingNumber,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCODShipmentsPendingSettlement = `-- name: ListCODShipmentsPendingSettlement :many
 SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number, 
        s.cod_amount_kurus, s.status, s.delivered_at

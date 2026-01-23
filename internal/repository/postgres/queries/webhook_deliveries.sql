@@ -192,3 +192,18 @@ FROM webhook_deliveries d
 JOIN webhook_events e ON d.event_id = e.id
 WHERE e.organization_id = $1
 GROUP BY status;
+
+-- name: ListWebhookDeliveriesByStatus :many
+SELECT id, event_id, subscription_id, endpoint_url, status, attempts,
+       last_attempt_at, next_retry_at, response_status, response_body_preview,
+       response_time_ms, error_message, created_at, updated_at
+FROM webhook_deliveries
+WHERE status = $1
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit_count')::int
+OFFSET sqlc.arg('offset_count')::int;
+
+-- name: CountWebhookDeliveriesByStatusSingle :one
+SELECT COUNT(*) as total
+FROM webhook_deliveries
+WHERE status = $1;
