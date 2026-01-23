@@ -130,3 +130,9 @@ SELECT m.id, m.organization_id, m.email, m.name, m.password_hash, m.role_id, m.s
 FROM members m
 JOIN roles r ON m.role_id = r.id
 WHERE m.id = $1 AND m.status != 'removed';
+
+-- name: CheckGlobalEmailExists :one
+SELECT EXISTS(
+    SELECT 1 FROM members
+    WHERE email = $1 AND status != 'removed'
+) as exists;

@@ -81,6 +81,8 @@ type RouterConfig struct {
 	WebhookDeliveryService *webhook.DeliveryService
 	// APIKeyService is the API key service (US6: API Key Management).
 	APIKeyService *auth.APIKeyService
+	// SessionService is the session service for authentication.
+	SessionService *auth.SessionService
 	// AuditLogRepository is the audit log repository (US10: Admin Tools).
 	AuditLogRepository *postgres.AuditLogRepository
 	// ProviderAPILogRepository is the provider API log repository (US10: Admin Tools).
@@ -163,6 +165,31 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	healthHandler := handler.NewHealthHandler(cfg.DBPool, cfg.RedisCache, cfg.Logger)
 	r.Get("/health/live", healthHandler.Live)
 	r.Get("/health/ready", healthHandler.Ready)
+
+	// Auth routes (public endpoints for login/register, authenticated for others)
+	if cfg.SessionService != nil {
+		authHandler := handler.NewAuthHandler(cfg.SessionService, cfg.Logger)
+		r.Route("/auth", func(r chi.Router) {
+			// Public endpoints (no auth required)
+			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+
+			// Authenticated endpoints
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.Auth(middleware.AuthConfig{
+					APIKeyValidator:  cfg.APIKeyValidator,
+					SessionValidator: cfg.SessionValidator,
+					Logger:           cfg.Logger,
+					RequireAuth:      true,
+				}))
+				r.Post("/logout", authHandler.Logout)
+				r.Post("/logout-all", authHandler.LogoutAll)
+				r.Get("/me", authHandler.Me)
+				r.Get("/sessions", authHandler.ListSessions)
+				r.Delete("/sessions/{id}", authHandler.DeleteSession)
+			})
+		})
+	}
 
 	// Initialize handlers
 	var quoteHandler *handler.QuoteHandler

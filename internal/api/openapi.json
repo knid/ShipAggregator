@@ -91,6 +91,58 @@
     }
   ],
   "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Register new organization",
+        "description": "Create a new organization with an owner member and automatically log them in",
+        "operationId": "register",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              },
+              "example": {
+                "organization_name": "My Company",
+                "email": "owner@example.com",
+                "name": "John Doe",
+                "password": "securepassword123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registration successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already taken",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
     "/auth/login": {
       "post": {
         "tags": [
@@ -3832,6 +3884,69 @@
           },
           "member": {
             "$ref": "#/components/schemas/Member"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "organization_name",
+          "email",
+          "name",
+          "password"
+        ],
+        "properties": {
+          "organization_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Name of the organization to create"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address for the owner account"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Full name of the owner"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "description": "Password for the owner account"
+          }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Session token for immediate authentication"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Session expiration time"
+          },
+          "member": {
+            "$ref": "#/components/schemas/Member"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the created organization"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the created session"
           }
         }
       },

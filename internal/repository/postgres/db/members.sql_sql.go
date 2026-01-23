@@ -50,6 +50,20 @@ func (q *Queries) ActivateMember(ctx context.Context, arg ActivateMemberParams) 
 	return &i, err
 }
 
+const checkGlobalEmailExists = `-- name: CheckGlobalEmailExists :one
+SELECT EXISTS(
+    SELECT 1 FROM members
+    WHERE email = $1 AND status != 'removed'
+) as exists
+`
+
+func (q *Queries) CheckGlobalEmailExists(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkGlobalEmailExists, email)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const checkMemberEmailExists = `-- name: CheckMemberEmailExists :one
 SELECT EXISTS(
     SELECT 1 FROM members

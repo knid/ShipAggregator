@@ -29,6 +29,24 @@ func NewAuthHandler(sessionService *auth.SessionService, logger *observability.L
 	}
 }
 
+// RegisterRequest represents the request body for registration.
+type RegisterRequest struct {
+	OrganizationName string `json:"organization_name"`
+	Email            string `json:"email"`
+	Name             string `json:"name"`
+	Password         string `json:"password"`
+}
+
+// RegisterResponse represents the response for a successful registration.
+type RegisterResponse struct {
+	Token          string     `json:"token"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	Member         MemberInfo `json:"member"`
+	Role           RoleInfo   `json:"role"`
+	OrganizationID uuid.UUID  `json:"organization_id"`
+	SessionID      uuid.UUID  `json:"session_id"`
+}
+
 // LoginRequest represents the request body for login.
 type LoginRequest struct {
 	Email    string `json:"email"`
@@ -206,6 +224,124 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// Register handles POST /auth/register
+// Creates a new organization with an owner member and logs them in.
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid request body"))
+		return
+	}
+
+	// Validate request
+	var validationErrors []ErrorDetail
+	if req.OrganizationName == "" {
+		validationErrors = append(validationErrors, NewFieldError("organization_name", "REQUIRED", "Organization name is required"))
+	}
+	if req.Email == "" {
+		validationErrors = append(validationErrors, NewFieldError("email", "REQUIRED", "Email is required"))
+	}
+	if req.Name == "" {
+		validationErrors = append(validationErrors, NewFieldError("name", "REQUIRED", "Name is required"))
+	}
+	if req.Password == "" {
+		validationErrors = append(validationErrors, NewFieldError("password", "REQUIRED", "Password is required"))
+	} else if len(req.Password) < 8 {
+		validationErrors = append(validationErrors, NewFieldError("password", "MIN_LENGTH", "Password must be at least 8 characters"))
+	}
+	if len(validationErrors) > 0 {
+		WriteError(w, r, NewValidationError("Validation failed", validationErrors))
+		return
+	}
+
+	// Get client IP
+	clientIP := getClientIP(r)
+
+	// Get user agent
+	var userAgent *string
+	if ua := r.Header.Get("User-Agent"); ua != "" {
+		userAgent = &ua
+	}
+
+	// Attempt registration
+	result, err := h.sessionService.Register(r.Context(), auth.RegisterRequest{
+		OrganizationName: req.OrganizationName,
+		Email:            req.Email,
+		Name:             req.Name,
+		Password:         req.Password,
+		IPAddress:        clientIP,
+		UserAgent:        userAgent,
+	})
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Warn("registration failed",
+				"email", req.Email,
+				"organization_name", req.OrganizationName,
+				"ip", clientIP,
+				"error", err.Error(),
+			)
+		}
+
+		// Map domain errors to appropriate responses
+		switch {
+		case errors.Is(err, domain.ErrMemberEmailTaken):
+			WriteError(w, r, &ProblemDetails{
+				Type:   ErrorTypeConflict,
+				Title:  "Email Already Taken",
+				Status: http.StatusConflict,
+				Detail: "An account with this email address already exists",
+				Code:   "EMAIL_TAKEN",
+			})
+		case errors.Is(err, domain.ErrOrganizationSlugTaken):
+			WriteError(w, r, &ProblemDetails{
+				Type:   ErrorTypeConflict,
+				Title:  "Organization Name Conflict",
+				Status: http.StatusConflict,
+				Detail: "An organization with a similar name already exists",
+				Code:   "ORGANIZATION_SLUG_TAKEN",
+			})
+		default:
+			WriteError(w, r, NewInternalError("An error occurred during registration"))
+		}
+		return
+	}
+
+	if h.logger != nil {
+		h.logger.Info("registration successful",
+			"member_id", result.Member.ID,
+			"organization_id", result.OrganizationID,
+			"ip", clientIP,
+		)
+	}
+
+	// Build response
+	response := RegisterResponse{
+		Token:          result.SessionToken,
+		ExpiresAt:      result.ExpiresAt,
+		SessionID:      result.SessionID,
+		OrganizationID: result.OrganizationID,
+		Member: MemberInfo{
+			ID:             result.Member.ID,
+			OrganizationID: result.Member.OrganizationID,
+			Email:          result.Member.Email,
+			Name:           result.Member.Name,
+			Status:         string(result.Member.Status),
+			JoinedAt:       result.Member.JoinedAt,
+			LastLoginAt:    result.Member.LastLoginAt,
+		},
+		Role: RoleInfo{
+			ID:          result.Role.ID,
+			Name:        result.Role.Name,
+			Permissions: result.Role.Permissions,
+			IsSystem:    result.Role.IsSystem,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(response)
 }
 

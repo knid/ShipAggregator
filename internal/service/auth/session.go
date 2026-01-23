@@ -68,6 +68,29 @@ func NewSessionService(queries *db.Queries, opts ...SessionServiceOption) *Sessi
 	return s
 }
 
+// RegisterRequest contains the parameters for registering a new organization and owner.
+type RegisterRequest struct {
+	// Organization details
+	OrganizationName string
+	// Owner member details
+	Email    string
+	Name     string
+	Password string
+	// Session details
+	IPAddress string
+	UserAgent *string
+}
+
+// RegisterResult contains the result of a successful registration.
+type RegisterResult struct {
+	SessionToken   string
+	SessionID      uuid.UUID
+	Member         *domain.Member
+	Role           *domain.Role
+	OrganizationID uuid.UUID
+	ExpiresAt      time.Time
+}
+
 // LoginRequest contains the parameters for logging in.
 type LoginRequest struct {
 	Email     string
@@ -189,6 +212,156 @@ func (s *SessionService) Login(ctx context.Context, req LoginRequest) (*LoginRes
 		OrganizationID: dbMember.OrganizationID,
 		ExpiresAt:      expiresAt,
 	}, nil
+}
+
+// Register creates a new organization with an owner member and logs them in.
+func (s *SessionService) Register(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
+	// Check if email already exists globally
+	emailExists, err := s.queries.CheckGlobalEmailExists(ctx, req.Email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check email existence: %w", err)
+	}
+	if emailExists {
+		return nil, domain.ErrMemberEmailTaken
+	}
+
+	// Generate organization slug from name
+	slug := generateSlug(req.OrganizationName)
+
+	// Check if slug already exists
+	slugExists, err := s.queries.CheckOrganizationSlugExists(ctx, db.CheckOrganizationSlugExistsParams{
+		Slug: slug,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to check slug existence: %w", err)
+	}
+	if slugExists {
+		// Append a random suffix to make it unique
+		slug = slug + "-" + generateRandomSuffix()
+	}
+
+	// Hash password
+	passwordHash, err := HashPassword(req.Password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Create organization
+	dbOrg, err := s.queries.CreateOrganization(ctx, db.CreateOrganizationParams{
+		Name:         req.OrganizationName,
+		Slug:         slug,
+		BillingEmail: req.Email,
+		Settings:     json.RawMessage(`{}`),
+		Status:       "active",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create organization: %w", err)
+	}
+
+	// Get the system owner role
+	ownerRole, err := s.queries.GetSystemRoleByName(ctx, "owner")
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("owner role not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get owner role: %w", err)
+	}
+
+	// Create owner member with active status
+	dbMember, err := s.queries.CreateMember(ctx, db.CreateMemberParams{
+		OrganizationID: dbOrg.ID,
+		Email:          req.Email,
+		Name:           req.Name,
+		PasswordHash:   &passwordHash,
+		RoleID:         ownerRole.ID,
+		Status:         string(domain.MemberStatusActive),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create member: %w", err)
+	}
+
+	// Activate the member (set joined_at)
+	now := time.Now().UTC()
+	dbMember.JoinedAt = pgtype.Timestamptz{Time: now, Valid: true}
+
+	// Generate session token
+	sessionToken, tokenHash, err := generateSessionToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session token: %w", err)
+	}
+
+	// Parse IP address
+	ipAddr, err := netip.ParseAddr(req.IPAddress)
+	if err != nil {
+		ipAddr = netip.MustParseAddr("0.0.0.0")
+	}
+
+	// Create session
+	expiresAt := time.Now().UTC().Add(s.sessionDuration)
+	dbSession, err := s.queries.CreateSession(ctx, db.CreateSessionParams{
+		MemberID:  dbMember.ID,
+		TokenHash: tokenHash,
+		IpAddress: ipAddr,
+		UserAgent: req.UserAgent,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Parse role permissions
+	var permissions []string
+	if err := json.Unmarshal(ownerRole.Permissions, &permissions); err != nil {
+		permissions = []string{}
+	}
+
+	return &RegisterResult{
+		SessionToken: sessionToken,
+		SessionID:    dbSession.ID,
+		Member:       s.dbMemberToDomain(dbMember),
+		Role: &domain.Role{
+			ID:          ownerRole.ID,
+			Name:        ownerRole.Name,
+			Permissions: permissions,
+			IsSystem:    ownerRole.IsSystem,
+		},
+		OrganizationID: dbOrg.ID,
+		ExpiresAt:      expiresAt,
+	}, nil
+}
+
+// generateSlug generates a URL-friendly slug from a name.
+func generateSlug(name string) string {
+	// Convert to lowercase and replace spaces with hyphens
+	slug := ""
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' {
+			slug += string(r)
+		} else if r >= 'A' && r <= 'Z' {
+			slug += string(r + 32) // Convert to lowercase
+		} else if r >= '0' && r <= '9' {
+			slug += string(r)
+		} else if r == ' ' || r == '-' || r == '_' {
+			if len(slug) > 0 && slug[len(slug)-1] != '-' {
+				slug += "-"
+			}
+		}
+	}
+	// Trim trailing hyphens
+	for len(slug) > 0 && slug[len(slug)-1] == '-' {
+		slug = slug[:len(slug)-1]
+	}
+	if slug == "" {
+		slug = "org"
+	}
+	return slug
+}
+
+// generateRandomSuffix generates a random 6-character suffix.
+func generateRandomSuffix() string {
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // ValidateSessionResult contains the result of session validation.

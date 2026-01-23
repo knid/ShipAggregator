@@ -17,6 +17,7 @@ type Querier interface {
 	ActivateMember(ctx context.Context, arg ActivateMemberParams) (*Member, error)
 	ActivateWebhookEndpoint(ctx context.Context, id uuid.UUID) (*WebhookEndpoint, error)
 	ActivateWebhookSubscription(ctx context.Context, id uuid.UUID) (*WebhookSubscription, error)
+	CheckGlobalEmailExists(ctx context.Context, email string) (bool, error)
 	CheckIdempotencyRecordExists(ctx context.Context, arg CheckIdempotencyRecordExistsParams) (bool, error)
 	CheckLedgerInvariant(ctx context.Context, organizationID uuid.UUID) (*CheckLedgerInvariantRow, error)
 	CheckMemberEmailExists(ctx context.Context, arg CheckMemberEmailExistsParams) (bool, error)
