@@ -425,10 +425,10 @@
 
 **Purpose**: Implement scheduled jobs and maintenance tasks
 
-- [ ] T213 [P] Implement internal/worker/tasks/idempotency_cleanup.go with 24-hour record cleanup
-- [ ] T214 [P] Implement internal/worker/tasks/reconciliation.go with daily financial reconciliation
-- [ ] T215 [P] Implement internal/worker/tasks/retention_cleanup.go with data retention enforcement
-- [ ] T216 Configure scheduler in internal/worker/scheduler.go with job schedules
+- [x] T213 [P] Implement internal/worker/tasks/idempotency_cleanup.go with 24-hour record cleanup
+- [x] T214 [P] Implement internal/worker/tasks/reconciliation.go with daily financial reconciliation
+- [x] T215 [P] Implement internal/worker/tasks/retention_cleanup.go with data retention enforcement
+- [x] T216 Configure scheduler in internal/worker/scheduler.go with job schedules
 
 **Checkpoint**: All background jobs implemented
 

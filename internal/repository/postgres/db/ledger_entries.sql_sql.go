@@ -288,6 +288,33 @@ func (q *Queries) GetLedgerSummaryByOrganization(ctx context.Context, organizati
 	return &i, err
 }
 
+const getLedgerTotalsByDateRange = `-- name: GetLedgerTotalsByDateRange :one
+SELECT
+    COALESCE(SUM(CASE WHEN entry_type = 'credit' THEN amount_kurus ELSE 0 END), 0) as total_credits_kurus,
+    COALESCE(SUM(CASE WHEN entry_type = 'debit' THEN amount_kurus ELSE 0 END), 0) as total_debits_kurus,
+    COUNT(*) as total_entries
+FROM ledger_entries
+WHERE created_at >= $1 AND created_at < $2
+`
+
+type GetLedgerTotalsByDateRangeParams struct {
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `db:"created_at_2" json:"created_at_2"`
+}
+
+type GetLedgerTotalsByDateRangeRow struct {
+	TotalCreditsKurus interface{} `db:"total_credits_kurus" json:"total_credits_kurus"`
+	TotalDebitsKurus  interface{} `db:"total_debits_kurus" json:"total_debits_kurus"`
+	TotalEntries      int64       `db:"total_entries" json:"total_entries"`
+}
+
+func (q *Queries) GetLedgerTotalsByDateRange(ctx context.Context, arg GetLedgerTotalsByDateRangeParams) (*GetLedgerTotalsByDateRangeRow, error) {
+	row := q.db.QueryRow(ctx, getLedgerTotalsByDateRange, arg.CreatedAt, arg.CreatedAt_2)
+	var i GetLedgerTotalsByDateRangeRow
+	err := row.Scan(&i.TotalCreditsKurus, &i.TotalDebitsKurus, &i.TotalEntries)
+	return &i, err
+}
+
 const getWalletBalance = `-- name: GetWalletBalance :one
 SELECT COALESCE(
     (SELECT balance_after_kurus FROM ledger_entries 
@@ -324,10 +351,10 @@ func (q *Queries) GetWalletBalanceWithLock(ctx context.Context, organizationID u
 }
 
 const listAllOrganizationBalances = `-- name: ListAllOrganizationBalances :many
-SELECT 
+SELECT
     organization_id,
-    (SELECT balance_after_kurus FROM ledger_entries le2 
-     WHERE le2.organization_id = le.organization_id 
+    (SELECT balance_after_kurus FROM ledger_entries le2
+     WHERE le2.organization_id = le.organization_id
      ORDER BY created_at DESC LIMIT 1) as balance_kurus,
     MAX(created_at) as last_transaction_at
 FROM ledger_entries le

@@ -145,7 +145,7 @@ FROM cod_settlements
 WHERE organization_id = $1;
 
 -- name: GetCODSettlementSummaryByProvider :many
-SELECT 
+SELECT
     provider_code,
     COUNT(*) as total_settlements,
     COALESCE(SUM(expected_amount_kurus), 0) as total_expected_kurus,
@@ -155,3 +155,12 @@ FROM cod_settlements
 WHERE organization_id = $1
 GROUP BY provider_code
 ORDER BY provider_code;
+
+-- name: ListCODSettlementsByDateRange :many
+SELECT id, organization_id, shipment_id, provider_code, expected_amount_kurus,
+       actual_amount_kurus, carrier_settlement_id, carrier_settlement_date, status,
+       ledger_entry_id, discrepancy_kurus, discrepancy_reason, settled_at,
+       created_at, updated_at
+FROM cod_settlements
+WHERE created_at >= $1 AND created_at < $2
+ORDER BY created_at DESC;

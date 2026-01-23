@@ -120,12 +120,20 @@ FROM ledger_entries le
 WHERE le.organization_id = $1;
 
 -- name: ListAllOrganizationBalances :many
-SELECT 
+SELECT
     organization_id,
-    (SELECT balance_after_kurus FROM ledger_entries le2 
-     WHERE le2.organization_id = le.organization_id 
+    (SELECT balance_after_kurus FROM ledger_entries le2
+     WHERE le2.organization_id = le.organization_id
      ORDER BY created_at DESC LIMIT 1) as balance_kurus,
     MAX(created_at) as last_transaction_at
 FROM ledger_entries le
 GROUP BY organization_id
 ORDER BY balance_kurus DESC;
+
+-- name: GetLedgerTotalsByDateRange :one
+SELECT
+    COALESCE(SUM(CASE WHEN entry_type = 'credit' THEN amount_kurus ELSE 0 END), 0) as total_credits_kurus,
+    COALESCE(SUM(CASE WHEN entry_type = 'debit' THEN amount_kurus ELSE 0 END), 0) as total_debits_kurus,
+    COUNT(*) as total_entries
+FROM ledger_entries
+WHERE created_at >= $1 AND created_at < $2;

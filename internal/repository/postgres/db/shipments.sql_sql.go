@@ -552,6 +552,76 @@ func (q *Queries) ListCODShipmentsPendingSettlement(ctx context.Context) ([]*Lis
 	return items, nil
 }
 
+const listShipmentsByDateRange = `-- name: ListShipmentsByDateRange :many
+SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
+       provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
+       provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
+       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
+       cancellation_reason, return_shipment_id, original_shipment_id, metadata,
+       created_at, updated_at
+FROM shipments
+WHERE created_at >= $1 AND created_at < $2
+ORDER BY created_at DESC
+`
+
+type ListShipmentsByDateRangeParams struct {
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `db:"created_at_2" json:"created_at_2"`
+}
+
+func (q *Queries) ListShipmentsByDateRange(ctx context.Context, arg ListShipmentsByDateRangeParams) ([]*Shipment, error) {
+	rows, err := q.db.Query(ctx, listShipmentsByDateRange, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*Shipment{}
+	for rows.Next() {
+		var i Shipment
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.IdempotencyKey,
+			&i.OfferID,
+			&i.ProviderCode,
+			&i.ServiceCode,
+			&i.ProviderAccountID,
+			&i.IsMarketplace,
+			&i.ProviderShipmentID,
+			&i.ProviderTrackingNumber,
+			&i.ProviderBarcode,
+			&i.OriginAddress,
+			&i.DestinationAddress,
+			&i.Parcel,
+			&i.CodAmountKurus,
+			&i.DeclaredValueKurus,
+			&i.Status,
+			&i.LabelDocumentID,
+			&i.LabelFormat,
+			&i.PriceChargedKurus,
+			&i.CostKurus,
+			&i.PickupScheduledAt,
+			&i.PickedUpAt,
+			&i.DeliveredAt,
+			&i.CancelledAt,
+			&i.CancellationReason,
+			&i.ReturnShipmentID,
+			&i.OriginalShipmentID,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listShipmentsByOrganization = `-- name: ListShipmentsByOrganization :many
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,

@@ -166,6 +166,7 @@ type Querier interface {
 	GetLedgerEntryByReference(ctx context.Context, arg GetLedgerEntryByReferenceParams) (*LedgerEntry, error)
 	GetLedgerSummaryByDateRange(ctx context.Context, arg GetLedgerSummaryByDateRangeParams) (*GetLedgerSummaryByDateRangeRow, error)
 	GetLedgerSummaryByOrganization(ctx context.Context, organizationID uuid.UUID) (*GetLedgerSummaryByOrganizationRow, error)
+	GetLedgerTotalsByDateRange(ctx context.Context, arg GetLedgerTotalsByDateRangeParams) (*GetLedgerTotalsByDateRangeRow, error)
 	// ============================================================================
 	// COMBINED QUERIES
 	// ============================================================================
@@ -285,6 +286,7 @@ type Querier interface {
 	ListAuditLogsByOrganization(ctx context.Context, arg ListAuditLogsByOrganizationParams) ([]*AuditLog, error)
 	ListAuditLogsByResource(ctx context.Context, arg ListAuditLogsByResourceParams) ([]*AuditLog, error)
 	ListAuditLogsByTraceID(ctx context.Context, traceID *string) ([]*AuditLog, error)
+	ListCODSettlementsByDateRange(ctx context.Context, arg ListCODSettlementsByDateRangeParams) ([]*CodSettlement, error)
 	ListCODSettlementsByOrganization(ctx context.Context, arg ListCODSettlementsByOrganizationParams) ([]*CodSettlement, error)
 	ListCODSettlementsForReconciliation(ctx context.Context, arg ListCODSettlementsForReconciliationParams) ([]*CodSettlement, error)
 	ListCODShipmentsPendingSettlement(ctx context.Context) ([]*ListCODShipmentsPendingSettlementRow, error)
@@ -325,9 +327,11 @@ type Querier interface {
 	ListQuotesByOrganization(ctx context.Context, arg ListQuotesByOrganizationParams) ([]*Quote, error)
 	ListRolesByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]*Role, error)
 	ListSessionsByMember(ctx context.Context, memberID uuid.UUID) ([]*Session, error)
+	ListShipmentsByDateRange(ctx context.Context, arg ListShipmentsByDateRangeParams) ([]*Shipment, error)
 	ListShipmentsByOrganization(ctx context.Context, arg ListShipmentsByOrganizationParams) ([]*Shipment, error)
 	ListShipmentsForTrackingPoll(ctx context.Context, arg ListShipmentsForTrackingPollParams) ([]*ListShipmentsForTrackingPollRow, error)
 	ListSystemRoles(ctx context.Context) ([]*Role, error)
+	ListTopupsByDateRange(ctx context.Context, arg ListTopupsByDateRangeParams) ([]*Topup, error)
 	ListTopupsByOrganization(ctx context.Context, arg ListTopupsByOrganizationParams) ([]*Topup, error)
 	ListTrackingEventsByShipment(ctx context.Context, shipmentID uuid.UUID) ([]*TrackingEvent, error)
 	ListTrackingEventsByShipmentAsc(ctx context.Context, shipmentID uuid.UUID) ([]*TrackingEvent, error)

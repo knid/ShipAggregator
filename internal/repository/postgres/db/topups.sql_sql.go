@@ -246,7 +246,7 @@ func (q *Queries) GetTopupByPaymentToken(ctx context.Context, paymentToken *stri
 }
 
 const getTopupSummaryByOrganization = `-- name: GetTopupSummaryByOrganization :one
-SELECT 
+SELECT
     COUNT(*) as total_topups,
     COALESCE(SUM(CASE WHEN status = 'completed' THEN amount_kurus ELSE 0 END), 0) as total_completed_kurus,
     COALESCE(SUM(CASE WHEN status = 'pending' OR status = 'processing' THEN amount_kurus ELSE 0 END), 0) as total_pending_kurus
@@ -265,6 +265,57 @@ func (q *Queries) GetTopupSummaryByOrganization(ctx context.Context, organizatio
 	var i GetTopupSummaryByOrganizationRow
 	err := row.Scan(&i.TotalTopups, &i.TotalCompletedKurus, &i.TotalPendingKurus)
 	return &i, err
+}
+
+const listTopupsByDateRange = `-- name: ListTopupsByDateRange :many
+SELECT id, organization_id, idempotency_key, amount_kurus, currency, status,
+       payment_provider, payment_id, payment_url, payment_token, ledger_entry_id,
+       failure_reason, completed_at, expires_at, created_at, updated_at
+FROM topups
+WHERE created_at >= $1 AND created_at < $2
+ORDER BY created_at DESC
+`
+
+type ListTopupsByDateRangeParams struct {
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `db:"created_at_2" json:"created_at_2"`
+}
+
+func (q *Queries) ListTopupsByDateRange(ctx context.Context, arg ListTopupsByDateRangeParams) ([]*Topup, error) {
+	rows, err := q.db.Query(ctx, listTopupsByDateRange, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*Topup{}
+	for rows.Next() {
+		var i Topup
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.IdempotencyKey,
+			&i.AmountKurus,
+			&i.Currency,
+			&i.Status,
+			&i.PaymentProvider,
+			&i.PaymentID,
+			&i.PaymentUrl,
+			&i.PaymentToken,
+			&i.LedgerEntryID,
+			&i.FailureReason,
+			&i.CompletedAt,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTopupsByOrganization = `-- name: ListTopupsByOrganization :many

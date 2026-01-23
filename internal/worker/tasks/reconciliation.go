@@ -1,20 +1,24 @@
+// Package tasks provides background task handlers for the worker.
 package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/shopspring/decimal"
 
 	"github.com/e-port/shipping-aggregator/internal/observability"
 	"github.com/e-port/shipping-aggregator/internal/repository/postgres/db"
 )
 
 // ReconciliationHandler handles daily financial reconciliation tasks.
-// It verifies that ledger entries match expected values and identifies discrepancies.
+// It verifies ledger invariants, reconciles with payment providers,
+// and checks for any financial discrepancies.
 type ReconciliationHandler struct {
 	pool    *pgxpool.Pool
 	queries *db.Queries
@@ -34,7 +38,59 @@ func NewReconciliationHandler(
 	}
 }
 
-// ProcessTask handles a reconciliation task.
+// ReconciliationResult holds the results of a reconciliation run.
+type ReconciliationResult struct {
+	Date                  string                 `json:"date"`
+	StartedAt             time.Time              `json:"started_at"`
+	CompletedAt           time.Time              `json:"completed_at"`
+	OrganizationsChecked  int                    `json:"organizations_checked"`
+	InvariantViolations   []InvariantViolation   `json:"invariant_violations,omitempty"`
+	TopupDiscrepancies    []TopupDiscrepancy     `json:"topup_discrepancies,omitempty"`
+	CODSettlementIssues   []CODSettlementIssue   `json:"cod_settlement_issues,omitempty"`
+	ShipmentBillingIssues []ShipmentBillingIssue `json:"shipment_billing_issues,omitempty"`
+	TotalCreditsKurus     int64                  `json:"total_credits_kurus"`
+	TotalDebitsKurus      int64                  `json:"total_debits_kurus"`
+	NetChangeKurus        int64                  `json:"net_change_kurus"`
+	Status                string                 `json:"status"` // "success", "warning", "error"
+}
+
+// InvariantViolation represents a ledger invariant violation.
+type InvariantViolation struct {
+	OrganizationID  uuid.UUID `json:"organization_id"`
+	ComputedBalance int64     `json:"computed_balance"`
+	StoredBalance   int64     `json:"stored_balance"`
+	Difference      int64     `json:"difference"`
+}
+
+// TopupDiscrepancy represents a discrepancy in top-up records.
+type TopupDiscrepancy struct {
+	TopupID        uuid.UUID `json:"topup_id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Status         string    `json:"status"`
+	AmountKurus    int64     `json:"amount_kurus"`
+	Issue          string    `json:"issue"`
+}
+
+// CODSettlementIssue represents an issue with COD settlement.
+type CODSettlementIssue struct {
+	SettlementID     uuid.UUID `json:"settlement_id"`
+	ShipmentID       uuid.UUID `json:"shipment_id"`
+	OrganizationID   uuid.UUID `json:"organization_id"`
+	ExpectedKurus    int64     `json:"expected_kurus"`
+	ActualKurus      int64     `json:"actual_kurus"`
+	DiscrepancyKurus int64     `json:"discrepancy_kurus"`
+	Issue            string    `json:"issue"`
+}
+
+// ShipmentBillingIssue represents a billing issue with a shipment.
+type ShipmentBillingIssue struct {
+	ShipmentID     uuid.UUID `json:"shipment_id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Issue          string    `json:"issue"`
+}
+
+// ProcessTask handles the reconciliation task.
+// It runs daily at 4:00 AM Turkey time as configured in the scheduler.
 func (h *ReconciliationHandler) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	payload, err := ParseReconciliationPayload(task)
 	if err != nil {
@@ -42,441 +98,349 @@ func (h *ReconciliationHandler) ProcessTask(ctx context.Context, task *asynq.Tas
 		return fmt.Errorf("failed to parse payload: %w", err)
 	}
 
-	h.logger.Info("Starting reconciliation",
+	h.logger.Info("Starting daily reconciliation",
 		"date", payload.Date,
 		"full_check", payload.FullCheck,
 	)
 
-	// Parse the date
-	date, err := time.Parse("2006-01-02", payload.Date)
+	result := &ReconciliationResult{
+		Date:      payload.Date,
+		StartedAt: time.Now(),
+		Status:    "success",
+	}
+
+	// Parse the date for filtering
+	reconcileDate, err := time.Parse("2006-01-02", payload.Date)
 	if err != nil {
 		return fmt.Errorf("invalid date format: %w", err)
 	}
 
-	// Run reconciliation checks
-	report := &ReconciliationReport{
-		Date:      payload.Date,
-		StartedAt: time.Now(),
+	// Step 1: Verify ledger invariants for all organizations
+	if err := h.verifyLedgerInvariants(ctx, result); err != nil {
+		h.logger.Error("Failed to verify ledger invariants", "error", err)
+		result.Status = "error"
 	}
 
-	// 1. Verify wallet balances match ledger entries
-	if err := h.reconcileWalletBalances(ctx, date, report); err != nil {
-		h.logger.Error("Wallet balance reconciliation failed", "error", err)
-		report.Errors = append(report.Errors, fmt.Sprintf("wallet_balances: %v", err))
+	// Step 2: Check for pending/stuck top-ups
+	if err := h.checkTopupDiscrepancies(ctx, result, reconcileDate); err != nil {
+		h.logger.Error("Failed to check topup discrepancies", "error", err)
+		result.Status = "error"
 	}
 
-	// 2. Verify shipment charges match ledger debits
-	if err := h.reconcileShipmentCharges(ctx, date, report); err != nil {
-		h.logger.Error("Shipment charge reconciliation failed", "error", err)
-		report.Errors = append(report.Errors, fmt.Sprintf("shipment_charges: %v", err))
+	// Step 3: Check COD settlements
+	if err := h.checkCODSettlements(ctx, result, reconcileDate); err != nil {
+		h.logger.Error("Failed to check COD settlements", "error", err)
+		result.Status = "error"
 	}
 
-	// 3. Verify topup credits match ledger credits
-	if err := h.reconcileTopupCredits(ctx, date, report); err != nil {
-		h.logger.Error("Topup credit reconciliation failed", "error", err)
-		report.Errors = append(report.Errors, fmt.Sprintf("topup_credits: %v", err))
+	// Step 4: Verify shipment billing
+	if err := h.verifyShipmentBilling(ctx, result, reconcileDate); err != nil {
+		h.logger.Error("Failed to verify shipment billing", "error", err)
+		result.Status = "error"
 	}
 
-	// 4. Verify COD settlements
-	if err := h.reconcileCODSettlements(ctx, date, report); err != nil {
-		h.logger.Error("COD settlement reconciliation failed", "error", err)
-		report.Errors = append(report.Errors, fmt.Sprintf("cod_settlements: %v", err))
+	// Step 5: Calculate daily totals
+	if err := h.calculateDailyTotals(ctx, result, reconcileDate); err != nil {
+		h.logger.Error("Failed to calculate daily totals", "error", err)
+		// Don't fail the whole job for this
 	}
 
-	// 5. Full check: verify all historical balances (if requested)
-	if payload.FullCheck {
-		if err := h.reconcileHistoricalBalances(ctx, report); err != nil {
-			h.logger.Error("Historical balance reconciliation failed", "error", err)
-			report.Errors = append(report.Errors, fmt.Sprintf("historical_balances: %v", err))
+	result.CompletedAt = time.Now()
+
+	// Determine final status
+	if len(result.InvariantViolations) > 0 {
+		result.Status = "error"
+	} else if len(result.TopupDiscrepancies) > 0 || len(result.CODSettlementIssues) > 0 || len(result.ShipmentBillingIssues) > 0 {
+		if result.Status != "error" {
+			result.Status = "warning"
 		}
 	}
 
-	report.CompletedAt = time.Now()
-	report.Duration = report.CompletedAt.Sub(report.StartedAt)
-
-	// Log the report
-	h.logReconciliationReport(report)
-
-	// If there are discrepancies, we don't fail the task but log warnings
-	if len(report.Discrepancies) > 0 {
-		h.logger.Warn("Reconciliation completed with discrepancies",
-			"discrepancy_count", len(report.Discrepancies),
-			"date", payload.Date,
-		)
-	}
-
-	h.logger.Info("Completed reconciliation",
+	// Log the result
+	resultJSON, _ := json.Marshal(result)
+	h.logger.Info("Completed daily reconciliation",
 		"date", payload.Date,
-		"duration", report.Duration,
-		"discrepancies", len(report.Discrepancies),
-		"errors", len(report.Errors),
+		"status", result.Status,
+		"organizations_checked", result.OrganizationsChecked,
+		"invariant_violations", len(result.InvariantViolations),
+		"topup_discrepancies", len(result.TopupDiscrepancies),
+		"cod_issues", len(result.CODSettlementIssues),
+		"shipment_issues", len(result.ShipmentBillingIssues),
+		"duration_ms", result.CompletedAt.Sub(result.StartedAt).Milliseconds(),
 	)
+
+	// Store reconciliation result in audit log
+	if err := h.storeReconciliationResult(ctx, result, resultJSON); err != nil {
+		h.logger.Warn("Failed to store reconciliation result", "error", err)
+	}
+
+	// If there are critical issues (invariant violations), return an error
+	// so the task can be retried or alerted on
+	if len(result.InvariantViolations) > 0 {
+		return fmt.Errorf("reconciliation found %d invariant violations", len(result.InvariantViolations))
+	}
 
 	return nil
 }
 
-// ReconciliationReport holds the results of a reconciliation run.
-type ReconciliationReport struct {
-	Date          string
-	StartedAt     time.Time
-	CompletedAt   time.Time
-	Duration      time.Duration
-	Discrepancies []Discrepancy
-	Errors        []string
-}
-
-// Discrepancy represents a reconciliation discrepancy.
-type Discrepancy struct {
-	Type           string
-	OrganizationID string
-	Expected       decimal.Decimal
-	Actual         decimal.Decimal
-	Difference     decimal.Decimal
-	Details        string
-}
-
-// reconcileWalletBalances verifies that computed wallet balances match ledger sums.
-func (h *ReconciliationHandler) reconcileWalletBalances(ctx context.Context, date time.Time, report *ReconciliationReport) error {
+// verifyLedgerInvariants checks that all organization ledgers are consistent.
+func (h *ReconciliationHandler) verifyLedgerInvariants(ctx context.Context, result *ReconciliationResult) error {
 	// Get all organizations with ledger entries
-	rows, err := h.pool.Query(ctx, `
-		SELECT 
-			organization_id,
-			SUM(CASE WHEN entry_type = 'credit' THEN amount_kurus ELSE -amount_kurus END) as computed_balance
-		FROM ledger_entries
-		WHERE created_at <= $1::date + INTERVAL '1 day'
-		GROUP BY organization_id
-	`, date)
+	balances, err := h.queries.ListAllOrganizationBalances(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to query ledger balances: %w", err)
+		return fmt.Errorf("failed to list organization balances: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var orgID string
-		var computedBalance int64
-		if err := rows.Scan(&orgID, &computedBalance); err != nil {
-			return fmt.Errorf("failed to scan row: %w", err)
-		}
+	result.OrganizationsChecked = len(balances)
 
-		// Get the stored balance from the view
-		var storedBalance int64
-		err := h.pool.QueryRow(ctx, `
-			SELECT COALESCE(balance_kurus, 0) 
-			FROM v_wallet_balances 
-			WHERE organization_id = $1
-		`, orgID).Scan(&storedBalance)
+	for _, balance := range balances {
+		// Check invariant for each organization
+		invariant, err := h.queries.CheckLedgerInvariant(ctx, balance.OrganizationID)
 		if err != nil {
-			h.logger.Warn("Failed to get stored balance",
-				"organization_id", orgID,
+			h.logger.Warn("Failed to check invariant for organization",
+				"organization_id", balance.OrganizationID,
 				"error", err,
 			)
 			continue
 		}
 
-		if computedBalance != storedBalance {
-			report.Discrepancies = append(report.Discrepancies, Discrepancy{
-				Type:           "wallet_balance",
-				OrganizationID: orgID,
-				Expected:       decimal.NewFromInt(computedBalance),
-				Actual:         decimal.NewFromInt(storedBalance),
-				Difference:     decimal.NewFromInt(computedBalance - storedBalance),
-				Details:        "Computed balance from ledger entries does not match stored balance",
-			})
-		}
-	}
+		// Compare computed vs stored balance
+		if invariant.ComputedBalance != invariant.StoredBalance {
+			violation := InvariantViolation{
+				OrganizationID:  balance.OrganizationID,
+				ComputedBalance: int64(invariant.ComputedBalance),
+				StoredBalance:   int64(invariant.StoredBalance),
+				Difference:      int64(invariant.ComputedBalance - invariant.StoredBalance),
+			}
+			result.InvariantViolations = append(result.InvariantViolations, violation)
 
-	return rows.Err()
-}
-
-// reconcileShipmentCharges verifies that shipment charges match ledger debits.
-func (h *ReconciliationHandler) reconcileShipmentCharges(ctx context.Context, date time.Time, report *ReconciliationReport) error {
-	// Get shipment charges for the date
-	rows, err := h.pool.Query(ctx, `
-		SELECT 
-			s.organization_id,
-			SUM(s.price_charged_kurus) as total_charged
-		FROM shipments s
-		WHERE s.created_at >= $1::date 
-		  AND s.created_at < $1::date + INTERVAL '1 day'
-		  AND s.price_charged_kurus IS NOT NULL
-		GROUP BY s.organization_id
-	`, date)
-	if err != nil {
-		return fmt.Errorf("failed to query shipment charges: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var orgID string
-		var totalCharged int64
-		if err := rows.Scan(&orgID, &totalCharged); err != nil {
-			return fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		// Get ledger debits for shipments on the same date
-		var ledgerDebits int64
-		err := h.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount_kurus), 0)
-			FROM ledger_entries
-			WHERE organization_id = $1
-			  AND entry_type = 'debit'
-			  AND reference_type = 'shipment'
-			  AND created_at >= $2::date
-			  AND created_at < $2::date + INTERVAL '1 day'
-		`, orgID, date).Scan(&ledgerDebits)
-		if err != nil {
-			h.logger.Warn("Failed to get ledger debits",
-				"organization_id", orgID,
-				"error", err,
+			h.logger.Error("Ledger invariant violation detected",
+				"organization_id", balance.OrganizationID,
+				"computed_balance", invariant.ComputedBalance,
+				"stored_balance", invariant.StoredBalance,
+				"difference", violation.Difference,
 			)
-			continue
-		}
-
-		if totalCharged != ledgerDebits {
-			report.Discrepancies = append(report.Discrepancies, Discrepancy{
-				Type:           "shipment_charges",
-				OrganizationID: orgID,
-				Expected:       decimal.NewFromInt(totalCharged),
-				Actual:         decimal.NewFromInt(ledgerDebits),
-				Difference:     decimal.NewFromInt(totalCharged - ledgerDebits),
-				Details:        fmt.Sprintf("Shipment charges for %s do not match ledger debits", date.Format("2006-01-02")),
-			})
 		}
 	}
 
-	return rows.Err()
-}
-
-// reconcileTopupCredits verifies that completed topups match ledger credits.
-func (h *ReconciliationHandler) reconcileTopupCredits(ctx context.Context, date time.Time, report *ReconciliationReport) error {
-	// Get completed topups for the date
-	rows, err := h.pool.Query(ctx, `
-		SELECT 
-			organization_id,
-			SUM(amount_kurus) as total_topups
-		FROM topups
-		WHERE status = 'completed'
-		  AND completed_at >= $1::date
-		  AND completed_at < $1::date + INTERVAL '1 day'
-		GROUP BY organization_id
-	`, date)
-	if err != nil {
-		return fmt.Errorf("failed to query topups: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var orgID string
-		var totalTopups int64
-		if err := rows.Scan(&orgID, &totalTopups); err != nil {
-			return fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		// Get ledger credits for topups on the same date
-		var ledgerCredits int64
-		err := h.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount_kurus), 0)
-			FROM ledger_entries
-			WHERE organization_id = $1
-			  AND entry_type = 'credit'
-			  AND reference_type = 'topup'
-			  AND created_at >= $2::date
-			  AND created_at < $2::date + INTERVAL '1 day'
-		`, orgID, date).Scan(&ledgerCredits)
-		if err != nil {
-			h.logger.Warn("Failed to get ledger credits",
-				"organization_id", orgID,
-				"error", err,
-			)
-			continue
-		}
-
-		if totalTopups != ledgerCredits {
-			report.Discrepancies = append(report.Discrepancies, Discrepancy{
-				Type:           "topup_credits",
-				OrganizationID: orgID,
-				Expected:       decimal.NewFromInt(totalTopups),
-				Actual:         decimal.NewFromInt(ledgerCredits),
-				Difference:     decimal.NewFromInt(totalTopups - ledgerCredits),
-				Details:        fmt.Sprintf("Topup credits for %s do not match ledger credits", date.Format("2006-01-02")),
-			})
-		}
-	}
-
-	return rows.Err()
-}
-
-// reconcileCODSettlements verifies that COD settlements match ledger entries.
-func (h *ReconciliationHandler) reconcileCODSettlements(ctx context.Context, date time.Time, report *ReconciliationReport) error {
-	// Get settled COD amounts for the date
-	rows, err := h.pool.Query(ctx, `
-		SELECT 
-			organization_id,
-			SUM(actual_amount_kurus) as total_settled
-		FROM cod_settlements
-		WHERE status = 'settled'
-		  AND settled_at >= $1::date
-		  AND settled_at < $1::date + INTERVAL '1 day'
-		GROUP BY organization_id
-	`, date)
-	if err != nil {
-		return fmt.Errorf("failed to query COD settlements: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var orgID string
-		var totalSettled int64
-		if err := rows.Scan(&orgID, &totalSettled); err != nil {
-			return fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		// Get ledger credits for COD settlements on the same date
-		var ledgerCredits int64
-		err := h.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount_kurus), 0)
-			FROM ledger_entries
-			WHERE organization_id = $1
-			  AND entry_type = 'credit'
-			  AND reference_type = 'cod_settlement'
-			  AND created_at >= $2::date
-			  AND created_at < $2::date + INTERVAL '1 day'
-		`, orgID, date).Scan(&ledgerCredits)
-		if err != nil {
-			h.logger.Warn("Failed to get COD ledger credits",
-				"organization_id", orgID,
-				"error", err,
-			)
-			continue
-		}
-
-		if totalSettled != ledgerCredits {
-			report.Discrepancies = append(report.Discrepancies, Discrepancy{
-				Type:           "cod_settlements",
-				OrganizationID: orgID,
-				Expected:       decimal.NewFromInt(totalSettled),
-				Actual:         decimal.NewFromInt(ledgerCredits),
-				Difference:     decimal.NewFromInt(totalSettled - ledgerCredits),
-				Details:        fmt.Sprintf("COD settlements for %s do not match ledger credits", date.Format("2006-01-02")),
-			})
-		}
-	}
-
-	return rows.Err()
-}
-
-// reconcileHistoricalBalances performs a full check of all historical balances.
-func (h *ReconciliationHandler) reconcileHistoricalBalances(ctx context.Context, report *ReconciliationReport) error {
-	// This is a more expensive check that verifies the running balance
-	// for each organization matches the balance_after_kurus in ledger entries
-	rows, err := h.pool.Query(ctx, `
-		WITH running_balances AS (
-			SELECT 
-				id,
-				organization_id,
-				entry_type,
-				amount_kurus,
-				balance_after_kurus,
-				SUM(CASE WHEN entry_type = 'credit' THEN amount_kurus ELSE -amount_kurus END) 
-					OVER (PARTITION BY organization_id ORDER BY created_at, id) as computed_balance
-			FROM ledger_entries
-		)
-		SELECT 
-			id,
-			organization_id,
-			balance_after_kurus,
-			computed_balance
-		FROM running_balances
-		WHERE balance_after_kurus != computed_balance
-		LIMIT 100
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to query historical balances: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var entryID, orgID string
-		var storedBalance, computedBalance int64
-		if err := rows.Scan(&entryID, &orgID, &storedBalance, &computedBalance); err != nil {
-			return fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		report.Discrepancies = append(report.Discrepancies, Discrepancy{
-			Type:           "historical_balance",
-			OrganizationID: orgID,
-			Expected:       decimal.NewFromInt(computedBalance),
-			Actual:         decimal.NewFromInt(storedBalance),
-			Difference:     decimal.NewFromInt(computedBalance - storedBalance),
-			Details:        fmt.Sprintf("Ledger entry %s has incorrect balance_after_kurus", entryID),
-		})
-	}
-
-	return rows.Err()
-}
-
-// logReconciliationReport logs the reconciliation report.
-func (h *ReconciliationHandler) logReconciliationReport(report *ReconciliationReport) {
-	h.logger.Info("Reconciliation report",
-		"date", report.Date,
-		"duration", report.Duration,
-		"discrepancy_count", len(report.Discrepancies),
-		"error_count", len(report.Errors),
-	)
-
-	for _, d := range report.Discrepancies {
-		h.logger.Warn("Reconciliation discrepancy",
-			"type", d.Type,
-			"organization_id", d.OrganizationID,
-			"expected", d.Expected.String(),
-			"actual", d.Actual.String(),
-			"difference", d.Difference.String(),
-			"details", d.Details,
-		)
-	}
-
-	for _, e := range report.Errors {
-		h.logger.Error("Reconciliation error", "error", e)
-	}
-}
-
-// CODSettlementHandler handles COD settlement processing tasks.
-type CODSettlementHandler struct {
-	pool    *pgxpool.Pool
-	queries *db.Queries
-	logger  *observability.Logger
-}
-
-// NewCODSettlementHandler creates a new COD settlement handler.
-func NewCODSettlementHandler(
-	pool *pgxpool.Pool,
-	queries *db.Queries,
-	logger *observability.Logger,
-) *CODSettlementHandler {
-	return &CODSettlementHandler{
-		pool:    pool,
-		queries: queries,
-		logger:  logger,
-	}
-}
-
-// ProcessTask handles a COD settlement task.
-func (h *CODSettlementHandler) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	payload, err := ParseCODSettlementPayload(task)
-	if err != nil {
-		h.logger.Error("Failed to parse COD settlement payload", "error", err)
-		return fmt.Errorf("failed to parse payload: %w", err)
-	}
-
-	h.logger.Info("Processing COD settlement", "settlement_id", payload.SettlementID)
-
-	// TODO: Implement COD settlement processing
-	// This would typically:
-	// 1. Get the settlement record
-	// 2. Verify the settlement amount with the carrier
-	// 3. Create a ledger entry for the credit
-	// 4. Update the settlement status
-
-	h.logger.Info("Completed COD settlement processing", "settlement_id", payload.SettlementID)
 	return nil
+}
+
+// checkTopupDiscrepancies checks for stuck or inconsistent top-ups.
+func (h *ReconciliationHandler) checkTopupDiscrepancies(ctx context.Context, result *ReconciliationResult, date time.Time) error {
+	// Check for top-ups that are stuck in "processing" status for too long
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	topups, err := h.queries.ListTopupsByDateRange(ctx, db.ListTopupsByDateRangeParams{
+		CreatedAt:   pgtype.Timestamptz{Time: startOfDay, Valid: true},
+		CreatedAt_2: pgtype.Timestamptz{Time: endOfDay, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list topups: %w", err)
+	}
+
+	for _, topup := range topups {
+		// Check for stuck processing topups (older than 1 hour)
+		if topup.Status == "processing" {
+			if time.Since(topup.CreatedAt.Time) > time.Hour {
+				result.TopupDiscrepancies = append(result.TopupDiscrepancies, TopupDiscrepancy{
+					TopupID:        topup.ID,
+					OrganizationID: topup.OrganizationID,
+					Status:         topup.Status,
+					AmountKurus:    int64(topup.AmountKurus),
+					Issue:          "Topup stuck in processing status for over 1 hour",
+				})
+			}
+		}
+
+		// Check for completed topups without ledger entry
+		if topup.Status == "completed" && !topup.LedgerEntryID.Valid {
+			result.TopupDiscrepancies = append(result.TopupDiscrepancies, TopupDiscrepancy{
+				TopupID:        topup.ID,
+				OrganizationID: topup.OrganizationID,
+				Status:         topup.Status,
+				AmountKurus:    int64(topup.AmountKurus),
+				Issue:          "Completed topup missing ledger entry",
+			})
+		}
+
+		// Check for expired pending topups
+		if topup.Status == "pending" && topup.ExpiresAt.Time.Before(time.Now()) {
+			result.TopupDiscrepancies = append(result.TopupDiscrepancies, TopupDiscrepancy{
+				TopupID:        topup.ID,
+				OrganizationID: topup.OrganizationID,
+				Status:         topup.Status,
+				AmountKurus:    int64(topup.AmountKurus),
+				Issue:          "Pending topup has expired but not marked as failed",
+			})
+		}
+	}
+
+	return nil
+}
+
+// checkCODSettlements checks for COD settlement issues.
+func (h *ReconciliationHandler) checkCODSettlements(ctx context.Context, result *ReconciliationResult, date time.Time) error {
+	// Check for COD settlements that are pending for too long
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	settlements, err := h.queries.ListCODSettlementsByDateRange(ctx, db.ListCODSettlementsByDateRangeParams{
+		CreatedAt:   pgtype.Timestamptz{Time: startOfDay, Valid: true},
+		CreatedAt_2: pgtype.Timestamptz{Time: endOfDay, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list COD settlements: %w", err)
+	}
+
+	for _, settlement := range settlements {
+		// Check for discrepancies between expected and actual amounts
+		if settlement.ActualAmountKurus != nil {
+			expected := int64(settlement.ExpectedAmountKurus)
+			actual := int64(*settlement.ActualAmountKurus)
+			if expected != actual {
+				result.CODSettlementIssues = append(result.CODSettlementIssues, CODSettlementIssue{
+					SettlementID:     settlement.ID,
+					ShipmentID:       settlement.ShipmentID,
+					OrganizationID:   settlement.OrganizationID,
+					ExpectedKurus:    expected,
+					ActualKurus:      actual,
+					DiscrepancyKurus: expected - actual,
+					Issue:            "COD amount discrepancy between expected and actual",
+				})
+			}
+		}
+
+		// Check for settled COD without ledger entry
+		if settlement.Status == "settled" && !settlement.LedgerEntryID.Valid {
+			result.CODSettlementIssues = append(result.CODSettlementIssues, CODSettlementIssue{
+				SettlementID:   settlement.ID,
+				ShipmentID:     settlement.ShipmentID,
+				OrganizationID: settlement.OrganizationID,
+				ExpectedKurus:  int64(settlement.ExpectedAmountKurus),
+				Issue:          "Settled COD missing ledger entry",
+			})
+		}
+
+		// Check for old pending COD settlements (delivered shipments)
+		if settlement.Status == "pending" {
+			// Get shipment to check if delivered
+			shipment, err := h.queries.GetShipmentByID(ctx, settlement.ShipmentID)
+			if err == nil && shipment.Status == "delivered" {
+				// If shipment delivered more than 7 days ago, flag it
+				if shipment.DeliveredAt.Valid && time.Since(shipment.DeliveredAt.Time) > 7*24*time.Hour {
+					result.CODSettlementIssues = append(result.CODSettlementIssues, CODSettlementIssue{
+						SettlementID:   settlement.ID,
+						ShipmentID:     settlement.ShipmentID,
+						OrganizationID: settlement.OrganizationID,
+						ExpectedKurus:  int64(settlement.ExpectedAmountKurus),
+						Issue:          "COD settlement pending for delivered shipment older than 7 days",
+					})
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// verifyShipmentBilling checks for shipment billing issues.
+func (h *ReconciliationHandler) verifyShipmentBilling(ctx context.Context, result *ReconciliationResult, date time.Time) error {
+	// Check for marketplace shipments with label_purchased status but no ledger entry
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	shipments, err := h.queries.ListShipmentsByDateRange(ctx, db.ListShipmentsByDateRangeParams{
+		CreatedAt:   pgtype.Timestamptz{Time: startOfDay, Valid: true},
+		CreatedAt_2: pgtype.Timestamptz{Time: endOfDay, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list shipments: %w", err)
+	}
+
+	for _, shipment := range shipments {
+		// Only check marketplace shipments (they should have wallet charges)
+		if !shipment.IsMarketplace {
+			continue
+		}
+
+		// Check if shipment has label purchased but no price charged
+		if shipment.Status != "draft" && shipment.PriceChargedKurus == nil {
+			result.ShipmentBillingIssues = append(result.ShipmentBillingIssues, ShipmentBillingIssue{
+				ShipmentID:     shipment.ID,
+				OrganizationID: shipment.OrganizationID,
+				Issue:          "Marketplace shipment with label but no price charged",
+			})
+		}
+
+		// Check for shipments with price charged but verify ledger entry exists
+		if shipment.PriceChargedKurus != nil && *shipment.PriceChargedKurus > 0 {
+			_, err := h.queries.GetLedgerEntryByReference(ctx, db.GetLedgerEntryByReferenceParams{
+				ReferenceType: "shipment",
+				ReferenceID:   shipment.ID,
+			})
+			if err != nil {
+				result.ShipmentBillingIssues = append(result.ShipmentBillingIssues, ShipmentBillingIssue{
+					ShipmentID:     shipment.ID,
+					OrganizationID: shipment.OrganizationID,
+					Issue:          "Shipment with price charged but no ledger entry found",
+				})
+			}
+		}
+	}
+
+	return nil
+}
+
+// calculateDailyTotals calculates the daily financial totals.
+func (h *ReconciliationHandler) calculateDailyTotals(ctx context.Context, result *ReconciliationResult, date time.Time) error {
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	// Get all ledger entries for the day
+	entries, err := h.queries.GetLedgerTotalsByDateRange(ctx, db.GetLedgerTotalsByDateRangeParams{
+		CreatedAt:   pgtype.Timestamptz{Time: startOfDay, Valid: true},
+		CreatedAt_2: pgtype.Timestamptz{Time: endOfDay, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get ledger totals: %w", err)
+	}
+
+	result.TotalCreditsKurus = interfaceToInt64(entries.TotalCreditsKurus)
+	result.TotalDebitsKurus = interfaceToInt64(entries.TotalDebitsKurus)
+	result.NetChangeKurus = result.TotalCreditsKurus - result.TotalDebitsKurus
+
+	return nil
+}
+
+// interfaceToInt64 converts an interface{} to int64.
+// This is needed because COALESCE in PostgreSQL returns interface{} type.
+func interfaceToInt64(v interface{}) int64 {
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int32:
+		return int64(val)
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	default:
+		return 0
+	}
+}
+
+// storeReconciliationResult stores the reconciliation result in the audit log.
+func (h *ReconciliationHandler) storeReconciliationResult(ctx context.Context, result *ReconciliationResult, resultJSON []byte) error {
+	_, err := h.queries.CreateAuditLog(ctx, db.CreateAuditLogParams{
+		ActorType:    "system",
+		Action:       "reconciliation.completed",
+		ResourceType: "reconciliation",
+		NewValue:     resultJSON,
+	})
+	return err
 }

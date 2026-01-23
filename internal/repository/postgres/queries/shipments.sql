@@ -276,3 +276,15 @@ RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
           created_at, updated_at;
+
+-- name: ListShipmentsByDateRange :many
+SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
+       provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
+       provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
+       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
+       cancellation_reason, return_shipment_id, original_shipment_id, metadata,
+       created_at, updated_at
+FROM shipments
+WHERE created_at >= $1 AND created_at < $2
+ORDER BY created_at DESC;

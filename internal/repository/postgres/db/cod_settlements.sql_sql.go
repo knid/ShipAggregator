@@ -223,7 +223,7 @@ func (q *Queries) GetCODSettlementSummaryByOrganization(ctx context.Context, org
 }
 
 const getCODSettlementSummaryByProvider = `-- name: GetCODSettlementSummaryByProvider :many
-SELECT 
+SELECT
     provider_code,
     COUNT(*) as total_settlements,
     COALESCE(SUM(expected_amount_kurus), 0) as total_expected_kurus,
@@ -258,6 +258,57 @@ func (q *Queries) GetCODSettlementSummaryByProvider(ctx context.Context, organiz
 			&i.TotalExpectedKurus,
 			&i.TotalSettledKurus,
 			&i.TotalPendingKurus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCODSettlementsByDateRange = `-- name: ListCODSettlementsByDateRange :many
+SELECT id, organization_id, shipment_id, provider_code, expected_amount_kurus,
+       actual_amount_kurus, carrier_settlement_id, carrier_settlement_date, status,
+       ledger_entry_id, discrepancy_kurus, discrepancy_reason, settled_at,
+       created_at, updated_at
+FROM cod_settlements
+WHERE created_at >= $1 AND created_at < $2
+ORDER BY created_at DESC
+`
+
+type ListCODSettlementsByDateRangeParams struct {
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `db:"created_at_2" json:"created_at_2"`
+}
+
+func (q *Queries) ListCODSettlementsByDateRange(ctx context.Context, arg ListCODSettlementsByDateRangeParams) ([]*CodSettlement, error) {
+	rows, err := q.db.Query(ctx, listCODSettlementsByDateRange, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*CodSettlement{}
+	for rows.Next() {
+		var i CodSettlement
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ShipmentID,
+			&i.ProviderCode,
+			&i.ExpectedAmountKurus,
+			&i.ActualAmountKurus,
+			&i.CarrierSettlementID,
+			&i.CarrierSettlementDate,
+			&i.Status,
+			&i.LedgerEntryID,
+			&i.DiscrepancyKurus,
+			&i.DiscrepancyReason,
+			&i.SettledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
