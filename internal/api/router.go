@@ -164,7 +164,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	// Health check endpoints (no auth required)
 	healthHandler := handler.NewHealthHandler(cfg.DBPool, cfg.RedisCache, cfg.Logger)
 	r.Get("/health/live", healthHandler.Live)
-	r.Get("/health/ready", healthHandler.Ready)
+	// r.Get("/health/ready", healthHandler.Ready)
 
 	// Initialize handlers
 	var quoteHandler *handler.QuoteHandler
@@ -327,7 +327,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		}))
 
 		// Health endpoint within v1 (for versioned health checks)
-		r.Get("/health", healthHandler.Ready)
+		r.Get("/health", healthHandler.Live)
 
 		// Auth routes (public endpoints for login/register, authenticated for others)
 		if cfg.SessionService != nil {
