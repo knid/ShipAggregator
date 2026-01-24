@@ -82,7 +82,7 @@ func (h *AddressHandler) ListAddresses(w http.ResponseWriter, r *http.Request) {
 
 	response := make([]AddressResponse, len(addresses))
 	for i, a := range addresses {
-		response[i] = addressToResponse(a)
+		response[i] = addressRowToResponse(a)
 	}
 
 	writeJSON(w, http.StatusOK, PaginatedResponse{
@@ -110,7 +110,7 @@ func (h *AddressHandler) searchAddresses(w http.ResponseWriter, r *http.Request,
 
 	response := make([]AddressResponse, len(addresses))
 	for i, a := range addresses {
-		response[i] = addressToResponse(a)
+		response[i] = searchAddressRowToResponse(a)
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -176,6 +176,26 @@ func (h *AddressHandler) CreateAddress(w http.ResponseWriter, r *http.Request) {
 
 	if len(fieldErrors) > 0 {
 		WriteError(w, r, NewValidationError("Validation failed", fieldErrors))
+		return
+	}
+
+	// Validate location codes exist in reference data
+	isValid, err := h.queries.ValidateLocationCodes(ctx, db.ValidateLocationCodesParams{
+		Code:   req.CityCode,
+		Code_2: req.DistrictCode,
+		Code_3: req.NeighborhoodCode,
+	})
+	if err != nil {
+		h.logger.Error("Failed to validate location codes", "error", err, "org_id", orgID)
+		WriteError(w, r, NewInternalError("Failed to validate location codes"))
+		return
+	}
+	if !isValid {
+		WriteError(w, r, NewValidationError("Invalid location codes", []ErrorDetail{
+			NewFieldError("city_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+			NewFieldError("district_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+			NewFieldError("neighborhood_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+		}))
 		return
 	}
 
@@ -260,7 +280,7 @@ func (h *AddressHandler) GetAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, addressToResponse(address))
+	writeJSON(w, http.StatusOK, getAddressRowToResponse(address))
 }
 
 // UpdateAddressRequest represents the request body for updating an address.
@@ -322,6 +342,42 @@ func (h *AddressHandler) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, r, NewBadRequestError("Invalid request body"))
 		return
+	}
+
+	// Validate location codes if any are being updated
+	if req.CityCode != nil || req.DistrictCode != nil || req.NeighborhoodCode != nil {
+		// Use existing values for any codes not being updated
+		cityCode := existingAddress.CityCode
+		if req.CityCode != nil {
+			cityCode = *req.CityCode
+		}
+		districtCode := existingAddress.DistrictCode
+		if req.DistrictCode != nil {
+			districtCode = *req.DistrictCode
+		}
+		neighborhoodCode := existingAddress.NeighborhoodCode
+		if req.NeighborhoodCode != nil {
+			neighborhoodCode = *req.NeighborhoodCode
+		}
+
+		isValid, err := h.queries.ValidateLocationCodes(ctx, db.ValidateLocationCodesParams{
+			Code:   cityCode,
+			Code_2: districtCode,
+			Code_3: neighborhoodCode,
+		})
+		if err != nil {
+			h.logger.Error("Failed to validate location codes", "error", err, "address_id", addressID)
+			WriteError(w, r, NewInternalError("Failed to validate location codes"))
+			return
+		}
+		if !isValid {
+			WriteError(w, r, NewValidationError("Invalid location codes", []ErrorDetail{
+				NewFieldError("city_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+				NewFieldError("district_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+				NewFieldError("neighborhood_code", "INVALID", "City, district, and neighborhood codes must be valid and consistent"),
+			}))
+			return
+		}
 	}
 
 	// Clear existing defaults if setting new defaults
@@ -571,7 +627,7 @@ func (h *AddressHandler) GetDefaultSender(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, addressToResponse(address))
+	writeJSON(w, http.StatusOK, defaultSenderRowToResponse(address))
 }
 
 // GetDefaultRecipient handles GET /addresses/default-recipient
@@ -597,7 +653,7 @@ func (h *AddressHandler) GetDefaultRecipient(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, addressToResponse(address))
+	writeJSON(w, http.StatusOK, defaultRecipientRowToResponse(address))
 }
 
 // Response types
@@ -614,8 +670,11 @@ type AddressResponse struct {
 	StreetLine1        string    `json:"street_line_1"`
 	StreetLine2        *string   `json:"street_line_2,omitempty"`
 	NeighborhoodCode   string    `json:"neighborhood_code"`
+	NeighborhoodName   *string   `json:"neighborhood_name,omitempty"`
 	DistrictCode       string    `json:"district_code"`
+	DistrictName       *string   `json:"district_name,omitempty"`
 	CityCode           string    `json:"city_code"`
+	CityName           *string   `json:"city_name,omitempty"`
 	PostalCode         *string   `json:"postal_code,omitempty"`
 	Latitude           float64   `json:"latitude"`
 	Longitude          float64   `json:"longitude"`
@@ -627,6 +686,158 @@ type AddressResponse struct {
 
 // Helper functions
 
+func addressRowToResponse(a *db.ListAddressesByOrganizationRow) AddressResponse {
+	lat, _ := a.Latitude.Float64()
+	lng, _ := a.Longitude.Float64()
+
+	return AddressResponse{
+		ID:                 a.ID,
+		OrganizationID:     a.OrganizationID,
+		Label:              a.Label,
+		ContactName:        a.ContactName,
+		CompanyName:        a.CompanyName,
+		Phone:              a.Phone,
+		Email:              a.Email,
+		StreetLine1:        a.StreetLine1,
+		StreetLine2:        a.StreetLine2,
+		NeighborhoodCode:   a.NeighborhoodCode,
+		NeighborhoodName:   a.NeighborhoodName,
+		DistrictCode:       a.DistrictCode,
+		DistrictName:       a.DistrictName,
+		CityCode:           a.CityCode,
+		CityName:           a.CityName,
+		PostalCode:         a.PostalCode,
+		Latitude:           lat,
+		Longitude:          lng,
+		IsDefaultSender:    a.IsDefaultSender,
+		IsDefaultRecipient: a.IsDefaultRecipient,
+		CreatedAt:          a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          a.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+func getAddressRowToResponse(a *db.GetAddressByIDRow) AddressResponse {
+	lat, _ := a.Latitude.Float64()
+	lng, _ := a.Longitude.Float64()
+
+	return AddressResponse{
+		ID:                 a.ID,
+		OrganizationID:     a.OrganizationID,
+		Label:              a.Label,
+		ContactName:        a.ContactName,
+		CompanyName:        a.CompanyName,
+		Phone:              a.Phone,
+		Email:              a.Email,
+		StreetLine1:        a.StreetLine1,
+		StreetLine2:        a.StreetLine2,
+		NeighborhoodCode:   a.NeighborhoodCode,
+		NeighborhoodName:   a.NeighborhoodName,
+		DistrictCode:       a.DistrictCode,
+		DistrictName:       a.DistrictName,
+		CityCode:           a.CityCode,
+		CityName:           a.CityName,
+		PostalCode:         a.PostalCode,
+		Latitude:           lat,
+		Longitude:          lng,
+		IsDefaultSender:    a.IsDefaultSender,
+		IsDefaultRecipient: a.IsDefaultRecipient,
+		CreatedAt:          a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          a.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+func searchAddressRowToResponse(a *db.SearchAddressesByOrganizationRow) AddressResponse {
+	lat, _ := a.Latitude.Float64()
+	lng, _ := a.Longitude.Float64()
+
+	return AddressResponse{
+		ID:                 a.ID,
+		OrganizationID:     a.OrganizationID,
+		Label:              a.Label,
+		ContactName:        a.ContactName,
+		CompanyName:        a.CompanyName,
+		Phone:              a.Phone,
+		Email:              a.Email,
+		StreetLine1:        a.StreetLine1,
+		StreetLine2:        a.StreetLine2,
+		NeighborhoodCode:   a.NeighborhoodCode,
+		NeighborhoodName:   a.NeighborhoodName,
+		DistrictCode:       a.DistrictCode,
+		DistrictName:       a.DistrictName,
+		CityCode:           a.CityCode,
+		CityName:           a.CityName,
+		PostalCode:         a.PostalCode,
+		Latitude:           lat,
+		Longitude:          lng,
+		IsDefaultSender:    a.IsDefaultSender,
+		IsDefaultRecipient: a.IsDefaultRecipient,
+		CreatedAt:          a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          a.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+func defaultSenderRowToResponse(a *db.GetDefaultSenderAddressRow) AddressResponse {
+	lat, _ := a.Latitude.Float64()
+	lng, _ := a.Longitude.Float64()
+
+	return AddressResponse{
+		ID:                 a.ID,
+		OrganizationID:     a.OrganizationID,
+		Label:              a.Label,
+		ContactName:        a.ContactName,
+		CompanyName:        a.CompanyName,
+		Phone:              a.Phone,
+		Email:              a.Email,
+		StreetLine1:        a.StreetLine1,
+		StreetLine2:        a.StreetLine2,
+		NeighborhoodCode:   a.NeighborhoodCode,
+		NeighborhoodName:   a.NeighborhoodName,
+		DistrictCode:       a.DistrictCode,
+		DistrictName:       a.DistrictName,
+		CityCode:           a.CityCode,
+		CityName:           a.CityName,
+		PostalCode:         a.PostalCode,
+		Latitude:           lat,
+		Longitude:          lng,
+		IsDefaultSender:    a.IsDefaultSender,
+		IsDefaultRecipient: a.IsDefaultRecipient,
+		CreatedAt:          a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          a.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+func defaultRecipientRowToResponse(a *db.GetDefaultRecipientAddressRow) AddressResponse {
+	lat, _ := a.Latitude.Float64()
+	lng, _ := a.Longitude.Float64()
+
+	return AddressResponse{
+		ID:                 a.ID,
+		OrganizationID:     a.OrganizationID,
+		Label:              a.Label,
+		ContactName:        a.ContactName,
+		CompanyName:        a.CompanyName,
+		Phone:              a.Phone,
+		Email:              a.Email,
+		StreetLine1:        a.StreetLine1,
+		StreetLine2:        a.StreetLine2,
+		NeighborhoodCode:   a.NeighborhoodCode,
+		NeighborhoodName:   a.NeighborhoodName,
+		DistrictCode:       a.DistrictCode,
+		DistrictName:       a.DistrictName,
+		CityCode:           a.CityCode,
+		CityName:           a.CityName,
+		PostalCode:         a.PostalCode,
+		Latitude:           lat,
+		Longitude:          lng,
+		IsDefaultSender:    a.IsDefaultSender,
+		IsDefaultRecipient: a.IsDefaultRecipient,
+		CreatedAt:          a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          a.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+// addressToResponse converts a basic Address (from create/update) to response
+// Note: This doesn't include names since RETURNING clause can't join tables
 func addressToResponse(a *db.Address) AddressResponse {
 	lat, _ := a.Latitude.Float64()
 	lng, _ := a.Longitude.Float64()

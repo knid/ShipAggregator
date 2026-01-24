@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -144,19 +145,51 @@ func (q *Queries) CreateAddress(ctx context.Context, arg CreateAddressParams) (*
 
 const getAddressByID = `-- name: GetAddressByID :one
 
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE id = $1 AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.id = $1 AND a.deleted_at IS NULL
 `
+
+type GetAddressByIDRow struct {
+	ID                 uuid.UUID          `db:"id" json:"id"`
+	OrganizationID     uuid.UUID          `db:"organization_id" json:"organization_id"`
+	Label              *string            `db:"label" json:"label"`
+	ContactName        string             `db:"contact_name" json:"contact_name"`
+	CompanyName        *string            `db:"company_name" json:"company_name"`
+	Phone              string             `db:"phone" json:"phone"`
+	Email              *string            `db:"email" json:"email"`
+	StreetLine1        string             `db:"street_line_1" json:"street_line_1"`
+	StreetLine2        *string            `db:"street_line_2" json:"street_line_2"`
+	NeighborhoodCode   string             `db:"neighborhood_code" json:"neighborhood_code"`
+	DistrictCode       string             `db:"district_code" json:"district_code"`
+	CityCode           string             `db:"city_code" json:"city_code"`
+	PostalCode         *string            `db:"postal_code" json:"postal_code"`
+	Latitude           decimal.Decimal    `db:"latitude" json:"latitude"`
+	Longitude          decimal.Decimal    `db:"longitude" json:"longitude"`
+	IsDefaultSender    bool               `db:"is_default_sender" json:"is_default_sender"`
+	IsDefaultRecipient bool               `db:"is_default_recipient" json:"is_default_recipient"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	CityName           *string            `db:"city_name" json:"city_name"`
+	DistrictName       *string            `db:"district_name" json:"district_name"`
+	NeighborhoodName   *string            `db:"neighborhood_name" json:"neighborhood_name"`
+}
 
 // Addresses CRUD queries
 // Table: addresses
-func (q *Queries) GetAddressByID(ctx context.Context, id uuid.UUID) (*Address, error) {
+func (q *Queries) GetAddressByID(ctx context.Context, id uuid.UUID) (*GetAddressByIDRow, error) {
 	row := q.db.QueryRow(ctx, getAddressByID, id)
-	var i Address
+	var i GetAddressByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
@@ -178,23 +211,58 @@ func (q *Queries) GetAddressByID(ctx context.Context, id uuid.UUID) (*Address, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CityName,
+		&i.DistrictName,
+		&i.NeighborhoodName,
 	)
 	return &i, err
 }
 
 const getDefaultRecipientAddress = `-- name: GetDefaultRecipientAddress :one
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND is_default_recipient = TRUE AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.is_default_recipient = TRUE AND a.deleted_at IS NULL
 LIMIT 1
 `
 
-func (q *Queries) GetDefaultRecipientAddress(ctx context.Context, organizationID uuid.UUID) (*Address, error) {
+type GetDefaultRecipientAddressRow struct {
+	ID                 uuid.UUID          `db:"id" json:"id"`
+	OrganizationID     uuid.UUID          `db:"organization_id" json:"organization_id"`
+	Label              *string            `db:"label" json:"label"`
+	ContactName        string             `db:"contact_name" json:"contact_name"`
+	CompanyName        *string            `db:"company_name" json:"company_name"`
+	Phone              string             `db:"phone" json:"phone"`
+	Email              *string            `db:"email" json:"email"`
+	StreetLine1        string             `db:"street_line_1" json:"street_line_1"`
+	StreetLine2        *string            `db:"street_line_2" json:"street_line_2"`
+	NeighborhoodCode   string             `db:"neighborhood_code" json:"neighborhood_code"`
+	DistrictCode       string             `db:"district_code" json:"district_code"`
+	CityCode           string             `db:"city_code" json:"city_code"`
+	PostalCode         *string            `db:"postal_code" json:"postal_code"`
+	Latitude           decimal.Decimal    `db:"latitude" json:"latitude"`
+	Longitude          decimal.Decimal    `db:"longitude" json:"longitude"`
+	IsDefaultSender    bool               `db:"is_default_sender" json:"is_default_sender"`
+	IsDefaultRecipient bool               `db:"is_default_recipient" json:"is_default_recipient"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	CityName           *string            `db:"city_name" json:"city_name"`
+	DistrictName       *string            `db:"district_name" json:"district_name"`
+	NeighborhoodName   *string            `db:"neighborhood_name" json:"neighborhood_name"`
+}
+
+func (q *Queries) GetDefaultRecipientAddress(ctx context.Context, organizationID uuid.UUID) (*GetDefaultRecipientAddressRow, error) {
 	row := q.db.QueryRow(ctx, getDefaultRecipientAddress, organizationID)
-	var i Address
+	var i GetDefaultRecipientAddressRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
@@ -216,23 +284,58 @@ func (q *Queries) GetDefaultRecipientAddress(ctx context.Context, organizationID
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CityName,
+		&i.DistrictName,
+		&i.NeighborhoodName,
 	)
 	return &i, err
 }
 
 const getDefaultSenderAddress = `-- name: GetDefaultSenderAddress :one
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND is_default_sender = TRUE AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.is_default_sender = TRUE AND a.deleted_at IS NULL
 LIMIT 1
 `
 
-func (q *Queries) GetDefaultSenderAddress(ctx context.Context, organizationID uuid.UUID) (*Address, error) {
+type GetDefaultSenderAddressRow struct {
+	ID                 uuid.UUID          `db:"id" json:"id"`
+	OrganizationID     uuid.UUID          `db:"organization_id" json:"organization_id"`
+	Label              *string            `db:"label" json:"label"`
+	ContactName        string             `db:"contact_name" json:"contact_name"`
+	CompanyName        *string            `db:"company_name" json:"company_name"`
+	Phone              string             `db:"phone" json:"phone"`
+	Email              *string            `db:"email" json:"email"`
+	StreetLine1        string             `db:"street_line_1" json:"street_line_1"`
+	StreetLine2        *string            `db:"street_line_2" json:"street_line_2"`
+	NeighborhoodCode   string             `db:"neighborhood_code" json:"neighborhood_code"`
+	DistrictCode       string             `db:"district_code" json:"district_code"`
+	CityCode           string             `db:"city_code" json:"city_code"`
+	PostalCode         *string            `db:"postal_code" json:"postal_code"`
+	Latitude           decimal.Decimal    `db:"latitude" json:"latitude"`
+	Longitude          decimal.Decimal    `db:"longitude" json:"longitude"`
+	IsDefaultSender    bool               `db:"is_default_sender" json:"is_default_sender"`
+	IsDefaultRecipient bool               `db:"is_default_recipient" json:"is_default_recipient"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	CityName           *string            `db:"city_name" json:"city_name"`
+	DistrictName       *string            `db:"district_name" json:"district_name"`
+	NeighborhoodName   *string            `db:"neighborhood_name" json:"neighborhood_name"`
+}
+
+func (q *Queries) GetDefaultSenderAddress(ctx context.Context, organizationID uuid.UUID) (*GetDefaultSenderAddressRow, error) {
 	row := q.db.QueryRow(ctx, getDefaultSenderAddress, organizationID)
-	var i Address
+	var i GetDefaultSenderAddressRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
@@ -254,6 +357,9 @@ func (q *Queries) GetDefaultSenderAddress(ctx context.Context, organizationID uu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CityName,
+		&i.DistrictName,
+		&i.NeighborhoodName,
 	)
 	return &i, err
 }
@@ -269,16 +375,22 @@ func (q *Queries) HardDeleteExpiredAddresses(ctx context.Context) error {
 }
 
 const listAddressesByOrganization = `-- name: ListAddressesByOrganization :many
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND deleted_at IS NULL
-ORDER BY 
-    CASE WHEN is_default_sender THEN 0 ELSE 1 END,
-    CASE WHEN is_default_recipient THEN 0 ELSE 1 END,
-    created_at DESC
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.deleted_at IS NULL
+ORDER BY
+    CASE WHEN a.is_default_sender THEN 0 ELSE 1 END,
+    CASE WHEN a.is_default_recipient THEN 0 ELSE 1 END,
+    a.created_at DESC
 LIMIT $3::int
 OFFSET $2::int
 `
@@ -289,15 +401,41 @@ type ListAddressesByOrganizationParams struct {
 	LimitCount     int32     `db:"limit_count" json:"limit_count"`
 }
 
-func (q *Queries) ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*Address, error) {
+type ListAddressesByOrganizationRow struct {
+	ID                 uuid.UUID          `db:"id" json:"id"`
+	OrganizationID     uuid.UUID          `db:"organization_id" json:"organization_id"`
+	Label              *string            `db:"label" json:"label"`
+	ContactName        string             `db:"contact_name" json:"contact_name"`
+	CompanyName        *string            `db:"company_name" json:"company_name"`
+	Phone              string             `db:"phone" json:"phone"`
+	Email              *string            `db:"email" json:"email"`
+	StreetLine1        string             `db:"street_line_1" json:"street_line_1"`
+	StreetLine2        *string            `db:"street_line_2" json:"street_line_2"`
+	NeighborhoodCode   string             `db:"neighborhood_code" json:"neighborhood_code"`
+	DistrictCode       string             `db:"district_code" json:"district_code"`
+	CityCode           string             `db:"city_code" json:"city_code"`
+	PostalCode         *string            `db:"postal_code" json:"postal_code"`
+	Latitude           decimal.Decimal    `db:"latitude" json:"latitude"`
+	Longitude          decimal.Decimal    `db:"longitude" json:"longitude"`
+	IsDefaultSender    bool               `db:"is_default_sender" json:"is_default_sender"`
+	IsDefaultRecipient bool               `db:"is_default_recipient" json:"is_default_recipient"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	CityName           *string            `db:"city_name" json:"city_name"`
+	DistrictName       *string            `db:"district_name" json:"district_name"`
+	NeighborhoodName   *string            `db:"neighborhood_name" json:"neighborhood_name"`
+}
+
+func (q *Queries) ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*ListAddressesByOrganizationRow, error) {
 	rows, err := q.db.Query(ctx, listAddressesByOrganization, arg.OrganizationID, arg.OffsetCount, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []*Address{}
+	items := []*ListAddressesByOrganizationRow{}
 	for rows.Next() {
-		var i Address
+		var i ListAddressesByOrganizationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
@@ -319,6 +457,9 @@ func (q *Queries) ListAddressesByOrganization(ctx context.Context, arg ListAddre
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CityName,
+			&i.DistrictName,
+			&i.NeighborhoodName,
 		); err != nil {
 			return nil, err
 		}
@@ -331,19 +472,25 @@ func (q *Queries) ListAddressesByOrganization(ctx context.Context, arg ListAddre
 }
 
 const searchAddressesByOrganization = `-- name: SearchAddressesByOrganization :many
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.deleted_at IS NULL
   AND (
-    label ILIKE '%' || $2 || '%'
-    OR contact_name ILIKE '%' || $2 || '%'
-    OR company_name ILIKE '%' || $2 || '%'
-    OR street_line_1 ILIKE '%' || $2 || '%'
+    a.label ILIKE '%' || $2 || '%'
+    OR a.contact_name ILIKE '%' || $2 || '%'
+    OR a.company_name ILIKE '%' || $2 || '%'
+    OR a.street_line_1 ILIKE '%' || $2 || '%'
   )
-ORDER BY created_at DESC
+ORDER BY a.created_at DESC
 LIMIT $3::int
 `
 
@@ -353,15 +500,41 @@ type SearchAddressesByOrganizationParams struct {
 	LimitCount     int32     `db:"limit_count" json:"limit_count"`
 }
 
-func (q *Queries) SearchAddressesByOrganization(ctx context.Context, arg SearchAddressesByOrganizationParams) ([]*Address, error) {
+type SearchAddressesByOrganizationRow struct {
+	ID                 uuid.UUID          `db:"id" json:"id"`
+	OrganizationID     uuid.UUID          `db:"organization_id" json:"organization_id"`
+	Label              *string            `db:"label" json:"label"`
+	ContactName        string             `db:"contact_name" json:"contact_name"`
+	CompanyName        *string            `db:"company_name" json:"company_name"`
+	Phone              string             `db:"phone" json:"phone"`
+	Email              *string            `db:"email" json:"email"`
+	StreetLine1        string             `db:"street_line_1" json:"street_line_1"`
+	StreetLine2        *string            `db:"street_line_2" json:"street_line_2"`
+	NeighborhoodCode   string             `db:"neighborhood_code" json:"neighborhood_code"`
+	DistrictCode       string             `db:"district_code" json:"district_code"`
+	CityCode           string             `db:"city_code" json:"city_code"`
+	PostalCode         *string            `db:"postal_code" json:"postal_code"`
+	Latitude           decimal.Decimal    `db:"latitude" json:"latitude"`
+	Longitude          decimal.Decimal    `db:"longitude" json:"longitude"`
+	IsDefaultSender    bool               `db:"is_default_sender" json:"is_default_sender"`
+	IsDefaultRecipient bool               `db:"is_default_recipient" json:"is_default_recipient"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	CityName           *string            `db:"city_name" json:"city_name"`
+	DistrictName       *string            `db:"district_name" json:"district_name"`
+	NeighborhoodName   *string            `db:"neighborhood_name" json:"neighborhood_name"`
+}
+
+func (q *Queries) SearchAddressesByOrganization(ctx context.Context, arg SearchAddressesByOrganizationParams) ([]*SearchAddressesByOrganizationRow, error) {
 	rows, err := q.db.Query(ctx, searchAddressesByOrganization, arg.OrganizationID, arg.Column2, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []*Address{}
+	items := []*SearchAddressesByOrganizationRow{}
 	for rows.Next() {
-		var i Address
+		var i SearchAddressesByOrganizationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
@@ -383,6 +556,9 @@ func (q *Queries) SearchAddressesByOrganization(ctx context.Context, arg SearchA
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CityName,
+			&i.DistrictName,
+			&i.NeighborhoodName,
 		); err != nil {
 			return nil, err
 		}

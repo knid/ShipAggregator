@@ -2,24 +2,36 @@
 -- Table: addresses
 
 -- name: GetAddressByID :one
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE id = $1 AND deleted_at IS NULL;
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.id = $1 AND a.deleted_at IS NULL;
 
 -- name: ListAddressesByOrganization :many
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND deleted_at IS NULL
-ORDER BY 
-    CASE WHEN is_default_sender THEN 0 ELSE 1 END,
-    CASE WHEN is_default_recipient THEN 0 ELSE 1 END,
-    created_at DESC
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.deleted_at IS NULL
+ORDER BY
+    CASE WHEN a.is_default_sender THEN 0 ELSE 1 END,
+    CASE WHEN a.is_default_recipient THEN 0 ELSE 1 END,
+    a.created_at DESC
 LIMIT sqlc.arg('limit_count')::int
 OFFSET sqlc.arg('offset_count')::int;
 
@@ -29,21 +41,33 @@ FROM addresses
 WHERE organization_id = $1 AND deleted_at IS NULL;
 
 -- name: GetDefaultSenderAddress :one
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND is_default_sender = TRUE AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.is_default_sender = TRUE AND a.deleted_at IS NULL
 LIMIT 1;
 
 -- name: GetDefaultRecipientAddress :one
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND is_default_recipient = TRUE AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.is_default_recipient = TRUE AND a.deleted_at IS NULL
 LIMIT 1;
 
 -- name: CreateAddress :one
@@ -145,19 +169,25 @@ RETURNING id, organization_id, label, contact_name, company_name, phone, email,
           created_at, updated_at, deleted_at;
 
 -- name: SearchAddressesByOrganization :many
-SELECT id, organization_id, label, contact_name, company_name, phone, email,
-       street_line_1, street_line_2, neighborhood_code, district_code, city_code,
-       postal_code, latitude, longitude, is_default_sender, is_default_recipient,
-       created_at, updated_at, deleted_at
-FROM addresses
-WHERE organization_id = $1 AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.label, a.contact_name, a.company_name, a.phone, a.email,
+       a.street_line_1, a.street_line_2, a.neighborhood_code, a.district_code, a.city_code,
+       a.postal_code, a.latitude, a.longitude, a.is_default_sender, a.is_default_recipient,
+       a.created_at, a.updated_at, a.deleted_at,
+       c.name as city_name,
+       d.name as district_name,
+       n.name as neighborhood_name
+FROM addresses a
+LEFT JOIN ref_cities c ON a.city_code = c.code
+LEFT JOIN ref_districts d ON a.district_code = d.code
+LEFT JOIN ref_neighborhoods n ON a.neighborhood_code = n.code
+WHERE a.organization_id = $1 AND a.deleted_at IS NULL
   AND (
-    label ILIKE '%' || $2 || '%'
-    OR contact_name ILIKE '%' || $2 || '%'
-    OR company_name ILIKE '%' || $2 || '%'
-    OR street_line_1 ILIKE '%' || $2 || '%'
+    a.label ILIKE '%' || $2 || '%'
+    OR a.contact_name ILIKE '%' || $2 || '%'
+    OR a.company_name ILIKE '%' || $2 || '%'
+    OR a.street_line_1 ILIKE '%' || $2 || '%'
   )
-ORDER BY created_at DESC
+ORDER BY a.created_at DESC
 LIMIT sqlc.arg('limit_count')::int;
 
 -- name: HardDeleteExpiredAddresses :exec

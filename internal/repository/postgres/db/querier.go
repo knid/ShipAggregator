@@ -120,7 +120,7 @@ type Querier interface {
 	GetActiveQuoteByID(ctx context.Context, id uuid.UUID) (*Quote, error)
 	// Addresses CRUD queries
 	// Table: addresses
-	GetAddressByID(ctx context.Context, id uuid.UUID) (*Address, error)
+	GetAddressByID(ctx context.Context, id uuid.UUID) (*GetAddressByIDRow, error)
 	GetAuditLogActivityByActor(ctx context.Context, arg GetAuditLogActivityByActorParams) ([]*GetAuditLogActivityByActorRow, error)
 	// Audit Logs queries (INSERT and READ only - immutable table)
 	// Table: audit_logs
@@ -141,8 +141,8 @@ type Querier interface {
 	// ============================================================================
 	GetCityByCode(ctx context.Context, code string) (*RefCity, error)
 	GetDefaultProviderAccount(ctx context.Context, arg GetDefaultProviderAccountParams) (*ProviderAccount, error)
-	GetDefaultRecipientAddress(ctx context.Context, organizationID uuid.UUID) (*Address, error)
-	GetDefaultSenderAddress(ctx context.Context, organizationID uuid.UUID) (*Address, error)
+	GetDefaultRecipientAddress(ctx context.Context, organizationID uuid.UUID) (*GetDefaultRecipientAddressRow, error)
+	GetDefaultSenderAddress(ctx context.Context, organizationID uuid.UUID) (*GetDefaultSenderAddressRow, error)
 	// ============================================================================
 	// DISTRICTS
 	// ============================================================================
@@ -280,7 +280,7 @@ type Querier interface {
 	ListActiveShipmentsByProvider(ctx context.Context, arg ListActiveShipmentsByProviderParams) ([]*ListActiveShipmentsByProviderRow, error)
 	ListActiveWebhookEndpointsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*WebhookEndpoint, error)
 	ListActiveWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) ([]*WebhookSubscription, error)
-	ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*Address, error)
+	ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*ListAddressesByOrganizationRow, error)
 	ListAllCities(ctx context.Context) ([]*RefCity, error)
 	ListAllOrganizationBalances(ctx context.Context) ([]*ListAllOrganizationBalancesRow, error)
 	ListAuditLogsByActor(ctx context.Context, arg ListAuditLogsByActorParams) ([]*AuditLog, error)
@@ -352,7 +352,7 @@ type Querier interface {
 	ReplayWebhookDelivery(ctx context.Context, id uuid.UUID) (*WebhookDelivery, error)
 	RevokeAPIKey(ctx context.Context, id uuid.UUID) (*ApiKey, error)
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (*ApiKey, error)
-	SearchAddressesByOrganization(ctx context.Context, arg SearchAddressesByOrganizationParams) ([]*Address, error)
+	SearchAddressesByOrganization(ctx context.Context, arg SearchAddressesByOrganizationParams) ([]*SearchAddressesByOrganizationRow, error)
 	SearchCitiesByName(ctx context.Context, arg SearchCitiesByNameParams) ([]*RefCity, error)
 	SearchDistrictsByName(ctx context.Context, arg SearchDistrictsByNameParams) ([]*SearchDistrictsByNameRow, error)
 	SearchLocations(ctx context.Context, arg SearchLocationsParams) ([]*SearchLocationsRow, error)
