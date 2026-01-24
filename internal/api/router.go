@@ -376,10 +376,10 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			r.Use(middleware.RequireScope("quotes:read"))
 			if quoteHandler != nil {
 				r.Get("/", quoteHandler.ListQuotes)
-				r.With(middleware.RequireScope("quotes:write")).Post("/", quoteHandler.CreateQuote)
+				r.With(middleware.RequireScope("quotes:create")).Post("/", quoteHandler.CreateQuote)
 				r.Get("/{id}", quoteHandler.GetQuote)
 				r.Get("/{id}/offers", quoteHandler.GetQuoteOffers)
-				r.With(middleware.RequireScope("quotes:write")).Post("/{id}/refresh", quoteHandler.RefreshQuote)
+				r.With(middleware.RequireScope("quotes:create")).Post("/{id}/refresh", quoteHandler.RefreshQuote)
 			}
 		})
 
@@ -396,16 +396,16 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			r.Use(middleware.RequireScope("shipments:read"))
 			if shipmentHandler != nil {
 				r.Get("/", shipmentHandler.ListShipments)
-				r.With(middleware.RequireScope("shipments:write")).Post("/", shipmentHandler.CreateShipment)
+				r.With(middleware.RequireScope("shipments:create")).Post("/", shipmentHandler.CreateShipment)
 				r.Get("/{id}", shipmentHandler.GetShipment)
-				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/purchase-label", shipmentHandler.PurchaseLabel)
-				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
+				r.With(middleware.RequireScope("shipments:label")).Post("/{id}/purchase-label", shipmentHandler.PurchaseLabel)
+				r.With(middleware.RequireScope("shipments:cancel")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
 				// US5: Tracking endpoint
 				r.Get("/{id}/tracking", shipmentHandler.GetTracking)
 				// US8: Return shipment endpoint
-				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/return", shipmentHandler.CreateReturn)
+				r.With(middleware.RequireScope("shipments:return")).Post("/{id}/return", shipmentHandler.CreateReturn)
 				// US9: Pickup scheduling endpoint
-				r.With(middleware.RequireScope("shipments:write")).Post("/{id}/pickup", shipmentHandler.SchedulePickup)
+				r.With(middleware.RequireScope("shipments:pickup")).Post("/{id}/pickup", shipmentHandler.SchedulePickup)
 			}
 		})
 
@@ -420,14 +420,14 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			r.Use(middleware.RequireScope("addresses:read"))
 			if addressHandler != nil {
 				r.Get("/", addressHandler.ListAddresses)
-				r.With(middleware.RequireScope("addresses:write")).Post("/", addressHandler.CreateAddress)
+				r.With(middleware.RequireScope("addresses:create")).Post("/", addressHandler.CreateAddress)
 				r.Get("/default-sender", addressHandler.GetDefaultSender)
 				r.Get("/default-recipient", addressHandler.GetDefaultRecipient)
 				r.Get("/{id}", addressHandler.GetAddress)
-				r.With(middleware.RequireScope("addresses:write")).Patch("/{id}", addressHandler.UpdateAddress)
-				r.With(middleware.RequireScope("addresses:write")).Delete("/{id}", addressHandler.DeleteAddress)
-				r.With(middleware.RequireScope("addresses:write")).Post("/{id}/default-sender", addressHandler.SetDefaultSender)
-				r.With(middleware.RequireScope("addresses:write")).Post("/{id}/default-recipient", addressHandler.SetDefaultRecipient)
+				r.With(middleware.RequireScope("addresses:update")).Patch("/{id}", addressHandler.UpdateAddress)
+				r.With(middleware.RequireScope("addresses:delete")).Delete("/{id}", addressHandler.DeleteAddress)
+				r.With(middleware.RequireScope("addresses:update")).Post("/{id}/default-sender", addressHandler.SetDefaultSender)
+				r.With(middleware.RequireScope("addresses:update")).Post("/{id}/default-recipient", addressHandler.SetDefaultRecipient)
 			}
 		})
 
@@ -446,26 +446,27 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			r.Use(middleware.RequireScope("organization:read"))
 			if organizationHandler != nil {
 				r.Get("/", organizationHandler.GetCurrentOrganization)
-				r.With(middleware.RequireScope("organization:write")).Patch("/", organizationHandler.UpdateCurrentOrganization)
-				r.Get("/members", organizationHandler.ListMembers)
-				r.With(middleware.RequireScope("organization:write")).Post("/members", organizationHandler.CreateMember)
-				r.Get("/members/{id}", organizationHandler.GetMember)
-				r.With(middleware.RequireScope("organization:write")).Patch("/members/{id}", organizationHandler.UpdateMember)
-				r.With(middleware.RequireScope("organization:write")).Delete("/members/{id}", organizationHandler.RemoveMember)
-				r.With(middleware.RequireScope("organization:write")).Post("/members/{id}/suspend", organizationHandler.SuspendMember)
-				r.With(middleware.RequireScope("organization:write")).Post("/members/{id}/reactivate", organizationHandler.ReactivateMember)
+				r.With(middleware.RequireScope("organization:update")).Patch("/", organizationHandler.UpdateCurrentOrganization)
+				r.With(middleware.RequireScope("members:read")).Get("/members", organizationHandler.ListMembers)
+				r.With(middleware.RequireScope("members:create")).Post("/members", organizationHandler.CreateMember)
+				r.With(middleware.RequireScope("members:read")).Get("/members/{id}", organizationHandler.GetMember)
+				r.With(middleware.RequireScope("members:update")).Patch("/members/{id}", organizationHandler.UpdateMember)
+				r.With(middleware.RequireScope("members:delete")).Delete("/members/{id}", organizationHandler.RemoveMember)
+				r.With(middleware.RequireScope("members:update")).Post("/members/{id}/suspend", organizationHandler.SuspendMember)
+				r.With(middleware.RequireScope("members:update")).Post("/members/{id}/reactivate", organizationHandler.ReactivateMember)
 			}
 		})
 
 		// API Keys routes (US6: API Key Management)
 		r.Route("/api-keys", func(r chi.Router) {
+			r.Use(middleware.RequireScope("api_keys:read"))
 			if apiKeyHandler != nil {
 				r.Get("/", apiKeyHandler.ListAPIKeys)
-				r.Post("/", apiKeyHandler.CreateAPIKey)
+				r.With(middleware.RequireScope("api_keys:create")).Post("/", apiKeyHandler.CreateAPIKey)
 				r.Get("/{id}", apiKeyHandler.GetAPIKey)
-				r.Patch("/{id}", apiKeyHandler.UpdateAPIKey)
-				r.Delete("/{id}", apiKeyHandler.RevokeAPIKey)
-				r.Post("/{id}/rotate", apiKeyHandler.RotateAPIKey)
+				r.With(middleware.RequireScope("api_keys:update")).Patch("/{id}", apiKeyHandler.UpdateAPIKey)
+				r.With(middleware.RequireScope("api_keys:delete")).Delete("/{id}", apiKeyHandler.RevokeAPIKey)
+				r.With(middleware.RequireScope("api_keys:rotate")).Post("/{id}/rotate", apiKeyHandler.RotateAPIKey)
 			}
 		})
 
@@ -484,20 +485,20 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					r.Get("/", billingHandler.ListCODSettlements)
 					r.Get("/summary", billingHandler.GetCODSettlementSummary)
 					r.Get("/{id}", billingHandler.GetCODSettlement)
-					r.With(middleware.RequireScope("billing:write")).Post("/{id}/dispute", billingHandler.DisputeCODSettlement)
+					r.With(middleware.RequireScope("billing:refund")).Post("/{id}/dispute", billingHandler.DisputeCODSettlement)
 
 					// Admin-only reconciliation endpoints
-					r.With(middleware.RequireScope("billing:admin")).Post("/reconcile", billingHandler.ReconcileCODSettlements)
-					r.With(middleware.RequireScope("billing:admin")).Post("/{id}/collected", billingHandler.MarkCODSettlementCollected)
+					r.With(middleware.RequireScope("billing:cod_reconcile")).Post("/reconcile", billingHandler.ReconcileCODSettlements)
+					r.With(middleware.RequireScope("billing:cod_reconcile")).Post("/{id}/collected", billingHandler.MarkCODSettlementCollected)
 				})
 
 				// Topup routes (US4: Wallet Top-Up via Iyzico)
 				r.Route("/topups", func(r chi.Router) {
 					r.Get("/", billingHandler.ListTopups)
-					r.With(middleware.RequireScope("billing:write")).Post("/", billingHandler.CreateTopup)
+					r.With(middleware.RequireScope("billing:topup")).Post("/", billingHandler.CreateTopup)
 					r.Get("/{id}", billingHandler.GetTopup)
-					r.With(middleware.RequireScope("billing:write")).Post("/{id}/confirm", billingHandler.ConfirmTopup)
-					r.With(middleware.RequireScope("billing:write")).Post("/{id}/cancel", billingHandler.CancelTopup)
+					r.With(middleware.RequireScope("billing:topup")).Post("/{id}/confirm", billingHandler.ConfirmTopup)
+					r.With(middleware.RequireScope("billing:topup")).Post("/{id}/cancel", billingHandler.CancelTopup)
 				})
 
 				// Refund routes (US7: Shipment Cancellation & Refund)
@@ -580,40 +581,39 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 
 		// Roles routes (T220)
 		r.Route("/roles", func(r chi.Router) {
-			r.Use(middleware.RequireScope("organization:read"))
+			r.Use(middleware.RequireScope("roles:read"))
 			if cfg.Queries != nil {
 				roleHandler := handler.NewRoleHandler(cfg.Queries, cfg.Logger)
 				r.Get("/", roleHandler.ListRoles)
-				r.With(middleware.RequireScope("organization:write")).Post("/", roleHandler.CreateRole)
+				r.With(middleware.RequireScope("roles:create")).Post("/", roleHandler.CreateRole)
 				r.Get("/{id}", roleHandler.GetRole)
-				r.With(middleware.RequireScope("organization:write")).Put("/{id}", roleHandler.UpdateRole)
-				r.With(middleware.RequireScope("organization:write")).Delete("/{id}", roleHandler.DeleteRole)
+				r.With(middleware.RequireScope("roles:update")).Put("/{id}", roleHandler.UpdateRole)
+				r.With(middleware.RequireScope("roles:delete")).Delete("/{id}", roleHandler.DeleteRole)
 			}
 		})
 
 		// Admin routes (US10: Admin Tools)
 		r.Route("/admin", func(r chi.Router) {
-			r.Use(middleware.RequireScope("admin:read"))
 			if adminHandler != nil {
 				// Audit logs (T183)
-				r.Get("/audit-logs", adminHandler.ListAuditLogs)
-				r.Get("/audit-logs/summary", adminHandler.GetAuditLogSummary)
-				r.Get("/audit-logs/{id}", adminHandler.GetAuditLog)
+				r.With(middleware.RequireScope("admin:audit_logs")).Get("/audit-logs", adminHandler.ListAuditLogs)
+				r.With(middleware.RequireScope("admin:audit_logs")).Get("/audit-logs/summary", adminHandler.GetAuditLogSummary)
+				r.With(middleware.RequireScope("admin:audit_logs")).Get("/audit-logs/{id}", adminHandler.GetAuditLog)
 
 				// Provider logs (T184)
-				r.Get("/provider-logs", adminHandler.ListProviderLogs)
-				r.Get("/provider-logs/{id}", adminHandler.GetProviderLog)
+				r.With(middleware.RequireScope("admin:provider_logs")).Get("/provider-logs", adminHandler.ListProviderLogs)
+				r.With(middleware.RequireScope("admin:provider_logs")).Get("/provider-logs/{id}", adminHandler.GetProviderLog)
 
 				// Provider health (T185)
-				r.Get("/health/providers", adminHandler.GetProviderHealth)
-				r.Get("/health/providers/{provider_code}", adminHandler.GetProviderHealthDetail)
+				r.With(middleware.RequireScope("admin:health")).Get("/health/providers", adminHandler.GetProviderHealth)
+				r.With(middleware.RequireScope("admin:health")).Get("/health/providers/{provider_code}", adminHandler.GetProviderHealthDetail)
 
 				// Webhook DLQ (T186)
-				r.Get("/webhooks/dlq", adminHandler.ListDLQ)
-				r.With(middleware.RequireScope("admin:write")).Post("/webhooks/dlq/reprocess", adminHandler.ReprocessDLQ)
+				r.With(middleware.RequireScope("admin:audit_logs")).Get("/webhooks/dlq", adminHandler.ListDLQ)
+				r.With(middleware.RequireScope("admin:audit_logs")).Post("/webhooks/dlq/reprocess", adminHandler.ReprocessDLQ)
 
 				// Shipment tracking rebuild (T187)
-				r.With(middleware.RequireScope("admin:write")).Post("/shipments/{id}/rebuild-tracking", adminHandler.RebuildTracking)
+				r.With(middleware.RequireScope("admin:audit_logs")).Post("/shipments/{id}/rebuild-tracking", adminHandler.RebuildTracking)
 			}
 		})
 	})
@@ -672,7 +672,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				Logger:           cfg.Logger,
 				RequireAuth:      true,
 			}))
-			r.Use(middleware.RequireScope("admin:write"))
+			r.Use(middleware.RequireScope("admin:provider_logs"))
 			if adminHandler != nil {
 				r.Post("/poll-tracking", adminHandler.PollTracking)
 			}
