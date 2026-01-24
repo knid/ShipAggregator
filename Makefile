@@ -79,6 +79,31 @@ seed:
 	@echo "$(GREEN)Seeding database...$(NC)"
 	$(GO) run ./cmd/migrate/main.go -seed
 
+## seed-reference: Seed reference data (cities, districts, neighborhoods) from JSON files
+## Usage: make seed-reference [TRUNCATE=1]
+## Place your JSON files in the data/ directory:
+##   - data/provinces.json (or provinces.min.json)
+##   - data/districts.json (or districts.min.json)
+##   - data/neighborhoods.json
+seed-reference:
+	@echo "$(GREEN)Seeding reference data...$(NC)"
+	@PROVINCES_FILE=$$(ls data/provinces*.json 2>/dev/null | head -1); \
+	DISTRICTS_FILE=$$(ls data/districts*.json 2>/dev/null | head -1); \
+	NEIGHBORHOODS_FILE=$$(ls data/neighborhoods*.json 2>/dev/null | head -1); \
+	if [ -z "$$PROVINCES_FILE" ] || [ -z "$$DISTRICTS_FILE" ] || [ -z "$$NEIGHBORHOODS_FILE" ]; then \
+		echo "$(RED)Error: Missing JSON files in data/ directory$(NC)"; \
+		echo "Required files: provinces.json, districts.json, neighborhoods.json"; \
+		exit 1; \
+	fi; \
+	TRUNCATE_FLAG=""; \
+	if [ "$(TRUNCATE)" = "1" ]; then TRUNCATE_FLAG="-truncate"; fi; \
+	$(GO) run ./cmd/seed/main.go \
+		-db "$(DATABASE_URL)" \
+		-provinces "$$PROVINCES_FILE" \
+		-districts "$$DISTRICTS_FILE" \
+		-neighborhoods "$$NEIGHBORHOODS_FILE" \
+		$$TRUNCATE_FLAG
+
 # ==================== Code Generation ====================
 
 ## generate: Run all code generation
