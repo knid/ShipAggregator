@@ -27,6 +27,7 @@ import (
 	"github.com/knid/kargonet/internal/service/billing"
 	"github.com/knid/kargonet/internal/service/organization"
 	providerservice "github.com/knid/kargonet/internal/service/provider"
+	"github.com/knid/kargonet/internal/service/quote"
 	"github.com/knid/kargonet/internal/service/shipment"
 
 	// Import all provider adapters to register them with the global factory.
@@ -170,6 +171,10 @@ func run() error {
 	organizationService := organization.NewService(queries)
 	logger.Info("organization service initialized")
 
+	// Initialize quote service (US1: Multi-carrier rate shopping)
+	quoteService := quote.NewService(queries, logger)
+	logger.Info("quote service initialized")
+
 	// Initialize provider account services (US2: BYOA - Bring Your Own Account)
 	var providerAccountService *providerservice.AccountService
 	var providerVerificationService *providerservice.VerificationService
@@ -186,6 +191,10 @@ func run() error {
 				logger,
 			)
 			logger.Info("provider account services initialized (BYOA enabled)")
+
+			// Upgrade quote service with BYOA support
+			quoteService = quote.NewServiceWithBYOA(queries, adapterPool, providerAccountService, logger)
+			logger.Info("quote service upgraded with BYOA support")
 		}
 	} else if cfg.Features.BYOAEnabled {
 		logger.Warn("BYOA feature enabled but ENCRYPTION_KEY not configured, provider accounts disabled")
@@ -202,6 +211,7 @@ func run() error {
 		RateLimiter:                 rateLimiter,
 		SessionService:              sessionService,
 		SessionValidator:            sessionValidator,
+		QuoteService:                quoteService,
 		ShipmentService:             shipmentService,
 		ProviderAccountService:      providerAccountService,
 		ProviderVerificationService: providerVerificationService,
