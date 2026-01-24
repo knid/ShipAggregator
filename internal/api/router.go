@@ -560,11 +560,22 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		})
 
 		// Reference data routes
-		r.Route("/reference", func(r chi.Router) {
+		r.Route("/ref", func(r chi.Router) {
 			// Reference data is public within authenticated context
-			// r.Get("/cities", referenceHandler.ListCities)
-			// r.Get("/cities/{cityCode}/districts", referenceHandler.ListDistricts)
-			// r.Get("/districts/{districtCode}/neighborhoods", referenceHandler.ListNeighborhoods)
+			if cfg.Queries != nil {
+				referenceHandler := handler.NewReferenceHandler(cfg.Queries, cfg.Logger)
+				r.Get("/cities", referenceHandler.ListCities)
+				r.Get("/cities/{code}", referenceHandler.GetCity)
+				r.Get("/districts", referenceHandler.ListDistricts)
+				r.Get("/districts/{code}", referenceHandler.GetDistrict)
+				r.Get("/neighborhoods", referenceHandler.ListNeighborhoods)
+				r.Get("/neighborhoods/{code}", referenceHandler.GetNeighborhood)
+				r.Get("/postal-codes", referenceHandler.ListPostalCodes)
+				r.Get("/postal-codes/{code}", referenceHandler.GetPostalCode)
+				r.Get("/lookup/postal-code/{code}", referenceHandler.LookupByPostalCode)
+				r.Get("/search", referenceHandler.SearchLocations)
+				r.Get("/stats", referenceHandler.GetReferenceDataStats)
+			}
 		})
 
 		// Roles routes (T220)
