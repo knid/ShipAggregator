@@ -85,8 +85,17 @@ func (s *LedgerService) Credit(ctx context.Context, req *CreditRequest) (*Ledger
 		return nil, ErrInvalidAmount
 	}
 
-	// Check for duplicate reference
-	_, err := s.queries.GetLedgerEntryByReference(ctx, db.GetLedgerEntryByReferenceParams{
+	// Get current balance (with lock for consistency).
+	// The lock must be acquired BEFORE the duplicate check to prevent a TOCTOU race
+	// where two concurrent requests both pass the duplicate check before either inserts.
+	currentBalance, err := s.queries.GetWalletBalanceWithLock(ctx, req.OrganizationID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("failed to get current balance: %w", err)
+	}
+	balanceKurus := interfaceToInt64(currentBalance)
+
+	// Check for duplicate reference (now protected by the wallet row lock)
+	_, err = s.queries.GetLedgerEntryByReference(ctx, db.GetLedgerEntryByReferenceParams{
 		ReferenceType: req.ReferenceType.String(),
 		ReferenceID:   req.ReferenceID,
 	})
@@ -96,13 +105,6 @@ func (s *LedgerService) Credit(ctx context.Context, req *CreditRequest) (*Ledger
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("failed to check duplicate reference: %w", err)
 	}
-
-	// Get current balance (with lock for consistency)
-	currentBalance, err := s.queries.GetWalletBalanceWithLock(ctx, req.OrganizationID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get current balance: %w", err)
-	}
-	balanceKurus := interfaceToInt64(currentBalance)
 
 	// Calculate new balance
 	newBalance := balanceKurus + req.AmountKurus
@@ -155,8 +157,17 @@ func (s *LedgerService) Debit(ctx context.Context, req *DebitRequest) (*LedgerEn
 		return nil, ErrInvalidAmount
 	}
 
-	// Check for duplicate reference
-	_, err := s.queries.GetLedgerEntryByReference(ctx, db.GetLedgerEntryByReferenceParams{
+	// Get current balance (with lock for consistency).
+	// The lock must be acquired BEFORE the duplicate check to prevent a TOCTOU race
+	// where two concurrent requests both pass the duplicate check before either inserts.
+	currentBalance, err := s.queries.GetWalletBalanceWithLock(ctx, req.OrganizationID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("failed to get current balance: %w", err)
+	}
+	balanceKurus := interfaceToInt64(currentBalance)
+
+	// Check for duplicate reference (now protected by the wallet row lock)
+	_, err = s.queries.GetLedgerEntryByReference(ctx, db.GetLedgerEntryByReferenceParams{
 		ReferenceType: req.ReferenceType.String(),
 		ReferenceID:   req.ReferenceID,
 	})
@@ -166,13 +177,6 @@ func (s *LedgerService) Debit(ctx context.Context, req *DebitRequest) (*LedgerEn
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("failed to check duplicate reference: %w", err)
 	}
-
-	// Get current balance (with lock for consistency)
-	currentBalance, err := s.queries.GetWalletBalanceWithLock(ctx, req.OrganizationID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get current balance: %w", err)
-	}
-	balanceKurus := interfaceToInt64(currentBalance)
 
 	// Check sufficient balance
 	if balanceKurus < req.AmountKurus {

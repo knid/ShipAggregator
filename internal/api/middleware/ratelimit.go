@@ -243,12 +243,7 @@ func getRateLimitKey(r *http.Request, keyFunc func(r *http.Request) string) stri
 
 // shouldSkipRateLimit checks if the path should skip rate limiting.
 func shouldSkipRateLimit(path string, skipPaths []string) bool {
-	for _, skip := range skipPaths {
-		if path == skip {
-			return true
-		}
-	}
-	return false
+	return matchSkipPath(path, skipPaths)
 }
 
 // setRateLimitHeaders sets the rate limit headers on the response.

@@ -247,8 +247,18 @@ type ConfirmTopupRequest struct {
 }
 
 // Confirm confirms a topup after payment completion.
+//
+// TODO(#20): This method is vulnerable to a race condition where two concurrent
+// Confirm calls for the same topup can both read the topup in "processing" state,
+// pass the status check, and both attempt to create ledger entries. The topup
+// retrieval below should use SELECT ... FOR UPDATE within a transaction to acquire
+// a row-level lock, preventing concurrent confirmation. A GetTopupByIDForUpdate
+// query should be added to the SQL queries and used here instead of GetTopupByID.
 func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*Topup, error) {
-	// Get topup by ID or token
+	// BUG(#20): This read is not protected by FOR UPDATE locking. Concurrent calls
+	// can both see the topup as "processing" and proceed to double-credit the wallet.
+	// The fix requires: (1) Begin a transaction, (2) SELECT ... FOR UPDATE on the
+	// topup row, (3) perform all confirmation logic within the transaction, (4) commit.
 	var dbTopup *db.Topup
 	var err error
 
@@ -358,8 +368,10 @@ func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*
 			"topup_id", dbTopup.ID,
 			"error", err,
 		)
-		// Don't fail the topup - payment was successful
-		// This should be handled by reconciliation
+		// Payment was collected but ledger credit failed - these must be consistent.
+		// Marking topup as completed without a ledger entry would silently lose money.
+		// Return an error so the topup stays in processing state for retry/reconciliation.
+		return nil, fmt.Errorf("payment succeeded but ledger credit failed: %w", err)
 	}
 
 	// Update topup as completed

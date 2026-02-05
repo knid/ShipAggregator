@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -76,14 +78,20 @@ type ClientConfig struct {
 	SkipTLSVerify bool
 	// Logger is the logger instance.
 	Logger *slog.Logger
+	// MaxRetries is the maximum number of retries for transient errors.
+	MaxRetries int
+	// RetryBaseDelay is the base delay between retries.
+	RetryBaseDelay time.Duration
 }
 
 // DefaultClientConfig returns the default client configuration.
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		Timeout:     30 * time.Second,
-		SOAPVersion: SOAP11,
-		Headers:     make(map[string]string),
+		Timeout:        30 * time.Second,
+		SOAPVersion:    SOAP11,
+		Headers:        make(map[string]string),
+		MaxRetries:     3,
+		RetryBaseDelay: 1 * time.Second,
 	}
 }
 
@@ -101,7 +109,10 @@ func NewClient(config ClientConfig) *Client {
 	}
 
 	transport := &http.Transport{
-		TLSClientConfig: config.TLSConfig,
+		TLSClientConfig:     config.TLSConfig,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
 	}
 
 	if config.SkipTLSVerify {
@@ -132,13 +143,52 @@ func (c *Client) Call(ctx context.Context, action string, request, response inte
 
 // CallWithEndpoint makes a SOAP request to a specific endpoint.
 func (c *Client) CallWithEndpoint(ctx context.Context, endpoint, action string, request, response interface{}) error {
-	startTime := time.Now()
-
-	// Build SOAP envelope
+	// Build SOAP envelope once before the retry loop
 	envelope, err := c.buildEnvelope(request)
 	if err != nil {
 		return fmt.Errorf("failed to build SOAP envelope: %w", err)
 	}
+
+	var lastErr error
+	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := c.calculateRetryDelay(attempt)
+			c.logger.Debug("retrying SOAP request",
+				slog.String("endpoint", endpoint),
+				slog.String("action", action),
+				slog.Int("attempt", attempt),
+				slog.Duration("delay", delay),
+			)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		err := c.doSOAPRequest(ctx, endpoint, action, envelope, response)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if the error is retryable
+		if !c.isRetryableError(err) {
+			return err
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("max retries exceeded: %w", lastErr)
+	}
+	return errors.New("max retries exceeded")
+}
+
+// doSOAPRequest executes a single SOAP HTTP request.
+func (c *Client) doSOAPRequest(ctx context.Context, endpoint, action string, envelope []byte, response interface{}) error {
+	startTime := time.Now()
 
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(envelope))
@@ -227,6 +277,39 @@ func (c *Client) CallWithEndpoint(ctx context.Context, endpoint, action string, 
 	}
 
 	return nil
+}
+
+// calculateRetryDelay calculates the backoff delay for a retry attempt using exponential backoff with jitter.
+func (c *Client) calculateRetryDelay(attempt int) time.Duration {
+	delay := float64(c.config.RetryBaseDelay) * math.Pow(2.0, float64(attempt-1))
+
+	// Add jitter (+-25%)
+	jitter := delay * 0.25 * (rand.Float64()*2 - 1)
+	delay += jitter
+
+	return time.Duration(delay)
+}
+
+// isRetryableError checks if an error is retryable (timeouts, connection errors, 5xx).
+func (c *Client) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check if it's a provider error with retryable flag
+	var providerErr *provider.ProviderError
+	if errors.As(err, &providerErr) {
+		return providerErr.Retryable
+	}
+
+	// Check for transient network errors
+	errStr := err.Error()
+	return strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "deadline exceeded") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "EOF")
 }
 
 // CallRaw makes a raw SOAP request with a pre-built envelope.

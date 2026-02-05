@@ -66,21 +66,13 @@ func (h *CODSettlementHandler) ProcessTask(ctx context.Context, task *asynq.Task
 }
 
 // processSettlement processes a single COD settlement.
+// TODO: Implement full COD settlement processing. The steps should be:
+//  1. Fetch the settlement record from the database
+//  2. Verify the settlement is in 'pending' status
+//  3. Calculate the settlement amount (COD amount - platform fees)
+//  4. Create a ledger entry to credit the merchant's wallet
+//  5. Update the settlement status to 'completed'
+//  6. Trigger a webhook notification to the merchant
 func (h *CODSettlementHandler) processSettlement(ctx context.Context, settlementID string) error {
-	// This is a placeholder implementation
-	// In a real implementation, this would:
-	// 1. Fetch the settlement record
-	// 2. Verify the settlement is in 'pending' status
-	// 3. Calculate the settlement amount (COD amount - fees)
-	// 4. Create a ledger entry to credit the merchant's wallet
-	// 5. Update the settlement status to 'completed'
-	// 6. Trigger a webhook notification
-
-	h.logger.Debug("processing settlement",
-		"settlement_id", settlementID,
-	)
-
-	// For now, return nil as no actual database operation is performed
-	// This would be replaced with actual business logic
-	return nil
+	return fmt.Errorf("COD settlement processing not yet implemented (settlement_id=%s)", settlementID)
 }

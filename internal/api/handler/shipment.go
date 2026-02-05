@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -232,8 +233,13 @@ func (h *ShipmentHandler) PurchaseLabel(w http.ResponseWriter, r *http.Request) 
 
 	var req PurchaseLabelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Allow empty body, use default format
-		req.LabelFormat = "pdf"
+		if errors.Is(err, io.EOF) {
+			// Empty body is allowed, use default format
+			req.LabelFormat = "pdf"
+		} else {
+			WriteError(w, r, NewBadRequestError("Invalid request body"))
+			return
+		}
 	}
 
 	// Parse label format
@@ -308,8 +314,13 @@ func (h *ShipmentHandler) CancelShipment(w http.ResponseWriter, r *http.Request)
 
 	var req CancelShipmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Allow empty body
-		req.Reason = "Cancelled by user"
+		if errors.Is(err, io.EOF) {
+			// Empty body is allowed, use default reason
+			req.Reason = "Cancelled by user"
+		} else {
+			WriteError(w, r, NewBadRequestError("Invalid request body"))
+			return
+		}
 	}
 
 	// Get actor info from context
@@ -603,7 +614,7 @@ func (h *ShipmentHandler) GetTracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get tracking history
-	history, err := h.trackingService.GetTrackingHistory(ctx, shipmentID)
+	history, err := h.trackingService.GetTrackingHistory(ctx, shipmentID, orgID)
 	if err != nil {
 		if errors.Is(err, tracking.ErrShipmentNotFound) {
 			WriteError(w, r, NewNotFoundError("Shipment"))

@@ -197,14 +197,15 @@ func run() error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	var runErr error
 	select {
-	case err := <-errChan:
-		return err
+	case runErr = <-errChan:
+		logger.Error("worker encountered error, initiating shutdown", "error", runErr)
 	case sig := <-quit:
 		logger.Info("received shutdown signal", "signal", sig.String())
 	}
 
-	// Graceful shutdown
+	// Graceful shutdown always executes, even on error
 	logger.Info("initiating graceful shutdown...")
 
 	// Shutdown scheduler first (stops enqueueing new tasks)
@@ -216,7 +217,7 @@ func run() error {
 	logger.Info("worker server stopped")
 
 	logger.Info("worker stopped gracefully")
-	return nil
+	return runErr
 }
 
 // taskHandlerDeps holds dependencies for task handlers.

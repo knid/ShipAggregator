@@ -172,7 +172,7 @@ func run() error {
 	logger.Info("organization service initialized")
 
 	// Initialize quote service (US1: Multi-carrier rate shopping)
-	quoteService := quote.NewService(queries, logger)
+	quoteService := quote.NewService(dbPool, queries, logger)
 	logger.Info("quote service initialized")
 
 	// Initialize provider account services (US2: BYOA - Bring Your Own Account)
@@ -193,7 +193,7 @@ func run() error {
 			logger.Info("provider account services initialized (BYOA enabled)")
 
 			// Upgrade quote service with BYOA support
-			quoteService = quote.NewServiceWithBYOA(queries, adapterPool, providerAccountService, logger)
+			quoteService = quote.NewServiceWithBYOA(dbPool, queries, adapterPool, providerAccountService, logger)
 			logger.Info("quote service upgraded with BYOA support")
 		}
 	} else if cfg.Features.BYOAEnabled {

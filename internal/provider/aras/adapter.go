@@ -189,10 +189,22 @@ func (a *Adapter) GetQuote(ctx context.Context, req provider.QuoteRequest) (*pro
 	}
 
 	// Parse city and district codes
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
+	originCityCode, err := parseLocationCode(req.Origin.CityCode, "origin city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin city code: %w", err)
+	}
+	originDistrictCode, err := parseLocationCode(req.Origin.DistrictCode, "origin district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin district code: %w", err)
+	}
+	destCityCode, err := parseLocationCode(req.Destination.CityCode, "destination city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination city code: %w", err)
+	}
+	destDistrictCode, err := parseLocationCode(req.Destination.DistrictCode, "destination district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination district code: %w", err)
+	}
 
 	// Calculate desi (volumetric weight)
 	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
@@ -281,10 +293,22 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 	}
 
 	// Parse city and district codes
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
+	originCityCode, err := parseLocationCode(req.Origin.CityCode, "origin city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin city code: %w", err)
+	}
+	originDistrictCode, err := parseLocationCode(req.Origin.DistrictCode, "origin district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin district code: %w", err)
+	}
+	destCityCode, err := parseLocationCode(req.Destination.CityCode, "destination city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination city code: %w", err)
+	}
+	destDistrictCode, err := parseLocationCode(req.Destination.DistrictCode, "destination district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination district code: %w", err)
+	}
 
 	// Calculate desi
 	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
@@ -588,8 +612,14 @@ func (a *Adapter) SchedulePickup(ctx context.Context, req provider.SchedulePicku
 		return nil, err
 	}
 
-	cityCode, _ := strconv.Atoi(req.Address.CityCode)
-	districtCode, _ := strconv.Atoi(req.Address.DistrictCode)
+	cityCode, err := parseLocationCode(req.Address.CityCode, "pickup city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pickup city code: %w", err)
+	}
+	districtCode, err := parseLocationCode(req.Address.DistrictCode, "pickup district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pickup district code: %w", err)
+	}
 	address := buildAddressString(req.Address)
 
 	soapReq := &SchedulePickupRequest{
@@ -689,10 +719,22 @@ func (a *Adapter) CreateReturn(ctx context.Context, req provider.CreateReturnReq
 	}
 
 	// Parse city and district codes (swapped for return)
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
+	originCityCode, err := parseLocationCode(req.Origin.CityCode, "origin city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin city code: %w", err)
+	}
+	originDistrictCode, err := parseLocationCode(req.Origin.DistrictCode, "origin district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse origin district code: %w", err)
+	}
+	destCityCode, err := parseLocationCode(req.Destination.CityCode, "destination city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination city code: %w", err)
+	}
+	destDistrictCode, err := parseLocationCode(req.Destination.DistrictCode, "destination district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse destination district code: %w", err)
+	}
 
 	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
 	originAddress := buildAddressString(req.Origin)
@@ -784,8 +826,14 @@ func (a *Adapter) GetDropoffPoints(ctx context.Context, req provider.GetDropoffP
 		return nil, err
 	}
 
-	cityCode, _ := strconv.Atoi(req.CityCode)
-	districtCode, _ := strconv.Atoi(req.DistrictCode)
+	cityCode, err := parseLocationCode(req.CityCode, "city")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse city code: %w", err)
+	}
+	districtCode, err := parseLocationCode(req.DistrictCode, "district")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse district code: %w", err)
+	}
 
 	soapReq := &GetDropoffPointsRequest{
 		UserName:     creds.Username,
@@ -846,6 +894,19 @@ func (a *Adapter) GetDropoffPoints(ctx context.Context, req provider.GetDropoffP
 	return &provider.GetDropoffPointsResponse{
 		Points: points,
 	}, nil
+}
+
+// parseLocationCode parses a location code string (city/district) to int,
+// returning a descriptive error if the string is empty or non-numeric.
+func parseLocationCode(value, fieldName string) (int, error) {
+	if value == "" {
+		return 0, fmt.Errorf("empty %s code", fieldName)
+	}
+	code, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s code %q: %w", fieldName, value, err)
+	}
+	return code, nil
 }
 
 // Helper functions

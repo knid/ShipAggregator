@@ -100,6 +100,14 @@ func (s *WalletService) GetBalanceWithLock(ctx context.Context, organizationID u
 }
 
 // HasSufficientBalance checks if the organization has sufficient balance for a debit.
+//
+// NOTE: This is an optimistic, lock-free balance check intended for early validation
+// (e.g., before initiating a shipment flow). It reads the balance without acquiring a
+// row-level lock (uses GetBalance, not GetBalanceWithLock), so the balance may change
+// between this check and the actual debit operation. This is acceptable because the
+// real protection against overdraft occurs in the Debit method, which acquires a
+// FOR UPDATE lock on the wallet balance within a transaction before performing the
+// debit. Do not rely on this method as the sole guard against insufficient funds.
 func (s *WalletService) HasSufficientBalance(ctx context.Context, organizationID uuid.UUID, amountKurus int64) (bool, error) {
 	if amountKurus <= 0 {
 		return false, ErrInvalidAmount
@@ -186,8 +194,13 @@ func (s *WalletService) VerifyInvariant(ctx context.Context, organizationID uuid
 	return result.ComputedBalance == result.StoredBalance, nil
 }
 
-// Helper function to convert interface{} to int64
+// Helper function to convert interface{} to int64.
+// This is needed because COALESCE in PostgreSQL returns interface{} type,
+// and pgtype fields may produce nil values for NULL columns.
 func interfaceToInt64(v interface{}) int64 {
+	if v == nil {
+		return 0
+	}
 	switch val := v.(type) {
 	case int64:
 		return val

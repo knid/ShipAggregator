@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,7 +101,10 @@ func NewClient(config ClientConfig) *Client {
 	}
 
 	transport := &http.Transport{
-		TLSClientConfig: config.TLSConfig,
+		TLSClientConfig:     config.TLSConfig,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
 	}
 
 	if config.SkipTLSVerify {
@@ -624,32 +628,7 @@ func basicAuth(username, password string) string {
 
 // base64Encode encodes bytes to base64.
 func base64Encode(data []byte) string {
-	const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	var result strings.Builder
-	for i := 0; i < len(data); i += 3 {
-		var n uint32
-		remaining := len(data) - i
-		if remaining >= 3 {
-			n = uint32(data[i])<<16 | uint32(data[i+1])<<8 | uint32(data[i+2])
-			result.WriteByte(base64Chars[(n>>18)&0x3F])
-			result.WriteByte(base64Chars[(n>>12)&0x3F])
-			result.WriteByte(base64Chars[(n>>6)&0x3F])
-			result.WriteByte(base64Chars[n&0x3F])
-		} else if remaining == 2 {
-			n = uint32(data[i])<<16 | uint32(data[i+1])<<8
-			result.WriteByte(base64Chars[(n>>18)&0x3F])
-			result.WriteByte(base64Chars[(n>>12)&0x3F])
-			result.WriteByte(base64Chars[(n>>6)&0x3F])
-			result.WriteByte('=')
-		} else {
-			n = uint32(data[i]) << 16
-			result.WriteByte(base64Chars[(n>>18)&0x3F])
-			result.WriteByte(base64Chars[(n>>12)&0x3F])
-			result.WriteByte('=')
-			result.WriteByte('=')
-		}
-	}
-	return result.String()
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 // CircuitBreakerState represents the state of a circuit breaker.

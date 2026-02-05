@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/knid/kargonet/internal/domain"
 	"github.com/knid/kargonet/internal/observability"
@@ -24,24 +26,32 @@ const QuoteExpiry = 30 * time.Minute
 // VATPercent is the default VAT percentage for Turkey.
 const VATPercent = 20.0
 
+// DefaultMarginPercent is the default marketplace margin (15%).
+const DefaultMarginPercent = 0.15
+
 // Service provides quote and offer management operations.
 type Service struct {
 	queries        *db.Queries
+	pool           *pgxpool.Pool
 	adapterPool    *provider.AdapterPool
 	accountService *providerservice.AccountService
 	logger         *observability.Logger
+	marginPercent  float64
 }
 
 // NewService creates a new quote service.
-func NewService(queries *db.Queries, logger *observability.Logger) *Service {
+func NewService(pool *pgxpool.Pool, queries *db.Queries, logger *observability.Logger) *Service {
 	return &Service{
-		queries: queries,
-		logger:  logger,
+		queries:       queries,
+		pool:          pool,
+		logger:        logger,
+		marginPercent: DefaultMarginPercent,
 	}
 }
 
 // NewServiceWithBYOA creates a new quote service with BYOA support.
 func NewServiceWithBYOA(
+	pool *pgxpool.Pool,
 	queries *db.Queries,
 	adapterPool *provider.AdapterPool,
 	accountService *providerservice.AccountService,
@@ -49,9 +59,11 @@ func NewServiceWithBYOA(
 ) *Service {
 	return &Service{
 		queries:        queries,
+		pool:           pool,
 		adapterPool:    adapterPool,
 		accountService: accountService,
 		logger:         logger,
+		marginPercent:  DefaultMarginPercent,
 	}
 }
 
@@ -203,8 +215,13 @@ func (s *Service) generateBYOAOffers(ctx context.Context, quote *db.Quote, req *
 
 	// Build address snapshots for provider API calls
 	// Note: For BYOA, we need to convert Address to AddressSnapshot
-	// The names (City, District, Neighborhood) should be resolved from reference data
-	// For now, we use the codes as placeholders - in production, these would be resolved
+	//
+	// TODO(#37): The City, District, and Neighborhood name fields below are incorrectly
+	// populated with codes (e.g. CityCode) instead of human-readable names. These should
+	// be resolved from the reference data tables (cities, districts, neighborhoods) using
+	// the code values. This causes provider API calls and stored snapshots to contain
+	// codes like "34" instead of names like "Istanbul". A location resolver service should
+	// be injected into this function to perform the lookup.
 	originSnapshot := domain.AddressSnapshot{
 		ContactName:      req.OriginAddress.ContactName,
 		CompanyName:      req.OriginAddress.CompanyName,
@@ -212,11 +229,11 @@ func (s *Service) generateBYOAOffers(ctx context.Context, quote *db.Quote, req *
 		Email:            req.OriginAddress.Email,
 		StreetLine1:      req.OriginAddress.StreetLine1,
 		StreetLine2:      req.OriginAddress.StreetLine2,
-		Neighborhood:     req.OriginAddress.NeighborhoodCode, // Would be resolved from ref data
+		Neighborhood:     req.OriginAddress.NeighborhoodCode, // BUG(#37): code used as name - resolve from ref data
 		NeighborhoodCode: req.OriginAddress.NeighborhoodCode,
-		District:         req.OriginAddress.DistrictCode, // Would be resolved from ref data
+		District:         req.OriginAddress.DistrictCode, // BUG(#37): code used as name - resolve from ref data
 		DistrictCode:     req.OriginAddress.DistrictCode,
-		City:             req.OriginAddress.CityCode, // Would be resolved from ref data
+		City:             req.OriginAddress.CityCode, // BUG(#37): code used as name - resolve from ref data
 		CityCode:         req.OriginAddress.CityCode,
 		PostalCode:       req.OriginAddress.PostalCode,
 	}
@@ -228,11 +245,11 @@ func (s *Service) generateBYOAOffers(ctx context.Context, quote *db.Quote, req *
 		Email:            req.DestinationAddress.Email,
 		StreetLine1:      req.DestinationAddress.StreetLine1,
 		StreetLine2:      req.DestinationAddress.StreetLine2,
-		Neighborhood:     req.DestinationAddress.NeighborhoodCode, // Would be resolved from ref data
+		Neighborhood:     req.DestinationAddress.NeighborhoodCode, // BUG(#37): code used as name - resolve from ref data
 		NeighborhoodCode: req.DestinationAddress.NeighborhoodCode,
-		District:         req.DestinationAddress.DistrictCode, // Would be resolved from ref data
+		District:         req.DestinationAddress.DistrictCode, // BUG(#37): code used as name - resolve from ref data
 		DistrictCode:     req.DestinationAddress.DistrictCode,
-		City:             req.DestinationAddress.CityCode, // Would be resolved from ref data
+		City:             req.DestinationAddress.CityCode, // BUG(#37): code used as name - resolve from ref data
 		CityCode:         req.DestinationAddress.CityCode,
 		PostalCode:       req.DestinationAddress.PostalCode,
 	}
@@ -477,7 +494,7 @@ func (s *Service) calculateOffer(
 
 	// Cost price (for marketplace margin calculation)
 	// In a real implementation, this would come from provider contracts
-	costPriceKurus := int32(float64(totalPriceKurus) * 0.85) // 15% margin
+	costPriceKurus := int32(float64(totalPriceKurus) * (1.0 - s.marginPercent))
 	marginKurus := totalPriceKurus - costPriceKurus
 
 	expiresAt := time.Now().Add(QuoteExpiry)
@@ -580,13 +597,24 @@ func (s *Service) RefreshQuote(ctx context.Context, quoteID uuid.UUID, orgID uui
 		}
 	}
 
+	// Wrap delete + recreate in a transaction to prevent concurrent RefreshQuote
+	// calls from leaving the quote in an inconsistent state (offers deleted but
+	// not yet recreated). See issue #19.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction for refresh: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.queries.WithTx(tx)
+
 	// Delete existing offers
-	if err := s.queries.DeleteOffersByQuote(ctx, quoteID); err != nil {
+	if err := qtx.DeleteOffersByQuote(ctx, quoteID); err != nil {
 		return nil, err
 	}
 
 	// Update quote status to pending
-	quote, err = s.queries.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
+	quote, err = qtx.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
 		ID:     quoteID,
 		Status: "pending",
 	})
@@ -594,7 +622,12 @@ func (s *Service) RefreshQuote(ctx context.Context, quoteID uuid.UUID, orgID uui
 		return nil, err
 	}
 
-	// Regenerate offers
+	// Regenerate offers using the transactional queries
+	// We temporarily swap s.queries so generateOffers uses the transaction.
+	origQueries := s.queries
+	s.queries = qtx
+	defer func() { s.queries = origQueries }()
+
 	req := &CreateQuoteRequest{
 		OrganizationID:     quote.OrganizationID,
 		IdempotencyKey:     quote.IdempotencyKey,
@@ -610,7 +643,7 @@ func (s *Service) RefreshQuote(ctx context.Context, quoteID uuid.UUID, orgID uui
 	offers, err := s.generateOffers(ctx, quote, req)
 	if err != nil {
 		s.logger.Error("Failed to regenerate offers", "error", err, "quote_id", quote.ID)
-		_, _ = s.queries.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
+		_, _ = qtx.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
 			ID:     quote.ID,
 			Status: "failed",
 		})
@@ -618,12 +651,16 @@ func (s *Service) RefreshQuote(ctx context.Context, quoteID uuid.UUID, orgID uui
 	}
 
 	// Update quote status to completed
-	quote, err = s.queries.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
+	quote, err = qtx.UpdateQuoteStatus(ctx, db.UpdateQuoteStatusParams{
 		ID:     quote.ID,
 		Status: "completed",
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit refresh transaction: %w", err)
 	}
 
 	return &QuoteResult{

@@ -2,7 +2,9 @@ package hepsijet
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -162,8 +164,10 @@ func (a *Adapter) getCredentials(creds *domain.ProviderCredentials) (*Credential
 }
 
 // credentialsHash returns a hash key for caching tokens.
+// Uses SHA256 to avoid leaking the raw API key in cache keys or logs.
 func (a *Adapter) credentialsHash(creds *Credentials) string {
-	return creds.APIKey
+	hash := sha256.Sum256([]byte(creds.APIKey))
+	return hex.EncodeToString(hash[:])
 }
 
 // getToken retrieves or refreshes an access token.
@@ -576,12 +580,17 @@ func (a *Adapter) GetLabel(ctx context.Context, req provider.GetLabelRequest) (*
 
 	path := fmt.Sprintf("%s/%s", EndpointLabels, req.TrackingNumber)
 
+	token, err := a.getToken(ctx, creds)
+	if err != nil {
+		return nil, err
+	}
+
 	restReq := rest.Request{
 		Method: "GET",
 		Path:   path,
 		Query:  query,
 		Headers: map[string]string{
-			"Authorization": "Bearer " + func() string { t, _ := a.getToken(ctx, creds); return t }(),
+			"Authorization": "Bearer " + token,
 		},
 	}
 

@@ -67,6 +67,10 @@ type HepsijetWebhookPayload struct {
 }
 
 // HandleWebhook handles incoming tracking webhooks from Hepsijet.
+// TODO(security): Add webhook signature verification for Hepsijet carrier webhooks.
+// Currently, any request with a valid JSON payload is accepted without authenticating
+// the sender. Hepsijet should provide an HMAC signature or shared secret mechanism
+// to verify that webhooks originate from their servers.
 func (h *HepsijetWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -200,12 +202,42 @@ func (s *DeliveryService) Deliver(ctx context.Context, req *DeliverRequest) (*De
 	}, nil
 }
 
+// validateWebhookURL validates that a webhook URL is safe to deliver to.
+func validateWebhookURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return fmt.Errorf("unsupported scheme: %s", parsed.Scheme)
+	}
+	host := parsed.Hostname()
+	// Block private/internal addresses
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
+		return fmt.Errorf("webhook delivery to localhost is not allowed")
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("webhook delivery to private/internal addresses is not allowed")
+		}
+	}
+	return nil
+}
+
 // performDelivery performs the actual HTTP delivery.
-func (s *DeliveryService) performDelivery(ctx context.Context, url string, payload []byte, secretHash string) *DeliverResult {
+func (s *DeliveryService) performDelivery(ctx context.Context, urlStr string, payload []byte, secretHash string) *DeliverResult {
+	if err := validateWebhookURL(urlStr); err != nil {
+		return &DeliverResult{
+			Success: false,
+			Error:   fmt.Sprintf("invalid webhook URL: %v", err),
+		}
+	}
+
 	start := time.Now()
 
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlStr, bytes.NewReader(payload))
 	if err != nil {
 		return &DeliverResult{
 			Success: false,
@@ -221,7 +253,10 @@ func (s *DeliveryService) performDelivery(ctx context.Context, url string, paylo
 	webhookID := uuid.New().String()
 	req.Header.Set("X-Webhook-Id", webhookID)
 
-	// Sign the payload if we have a secret
+	// Sign the payload if we have a secret.
+	// IMPORTANT: Capture timestamp once and reuse for both signing and the header
+	// to ensure the verifier can reconstruct the same signed message.
+	// crypto.SignWebhook uses the provided timestamp directly (no internal time.Now() call).
 	if secretHash != "" {
 		timestamp := time.Now().Unix()
 		signature := crypto.SignWebhook(payload, secretHash, timestamp)

@@ -5,10 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,9 +66,10 @@ type AuthInfo struct {
 
 // HasScope checks if the auth info has a specific scope.
 func (a *AuthInfo) HasScope(scope string) bool {
+	// Empty scopes means no scopes are allowed (deny by default).
+	// Use "*" wildcard to grant all scopes explicitly.
 	if len(a.Scopes) == 0 {
-		// Empty scopes means all scopes are allowed
-		return true
+		return false
 	}
 	for _, s := range a.Scopes {
 		if s == scope || s == "*" {
@@ -285,7 +286,9 @@ func authenticateAPIKey(ctx context.Context, token string, r *http.Request, cfg 
 
 	// Update last used timestamp (async, don't block request)
 	go func() {
-		_ = cfg.APIKeyValidator.UpdateLastUsed(context.Background(), keyInfo.ID)
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = cfg.APIKeyValidator.UpdateLastUsed(updateCtx, keyInfo.ID)
 	}()
 
 	return &AuthInfo{
@@ -340,7 +343,9 @@ func authenticateSession(ctx context.Context, token string, r *http.Request, cfg
 
 	// Update session activity (async, don't block request)
 	go func() {
-		_ = cfg.SessionValidator.UpdateSessionActivity(context.Background(), sessionInfo.ID)
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = cfg.SessionValidator.UpdateSessionActivity(updateCtx, sessionInfo.ID)
 	}()
 
 	return &AuthInfo{
@@ -510,8 +515,24 @@ func isIPAllowed(clientIP string, allowlist []string) bool {
 
 // shouldSkipAuth checks if the path should skip authentication.
 func shouldSkipAuth(path string, skipPaths []string) bool {
+	return matchSkipPath(path, skipPaths)
+}
+
+// matchSkipPath provides consistent skip-path matching across all middleware.
+// It supports exact match and wildcard suffix matching (e.g., "/health*").
+func matchSkipPath(path string, skipPaths []string) bool {
 	for _, skip := range skipPaths {
-		if path == skip || strings.HasPrefix(path, skip) {
+		if skip == "" {
+			continue
+		}
+		if skip[len(skip)-1] == '*' {
+			// Wildcard prefix match
+			prefix := skip[:len(skip)-1]
+			if strings.HasPrefix(path, prefix) {
+				return true
+			}
+		} else if path == skip {
+			// Exact match
 			return true
 		}
 	}
@@ -550,9 +571,22 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, code, detail string,
 
 	traceID := GetTraceID(r.Context())
 
-	// Simple JSON response - full RFC 7807 implementation is in handler/errors.go
-	response := `{"type":"https://api.kargonet.com/errors/` + strings.ToLower(strings.ReplaceAll(code, "_", "-")) + `","title":"` + getErrorTitle(code) + `","status":` + strconv.Itoa(status) + `,"detail":"` + detail + `","code":"` + code + `","trace_id":"` + traceID + `"}`
-	_, _ = w.Write([]byte(response))
+	// Use json.Marshal to prevent injection via detail/code fields
+	problem := map[string]interface{}{
+		"type":     "https://api.kargonet.com/errors/" + strings.ToLower(strings.ReplaceAll(code, "_", "-")),
+		"title":    getErrorTitle(code),
+		"status":   status,
+		"detail":   detail,
+		"code":     code,
+		"trace_id": traceID,
+	}
+	response, err := json.Marshal(problem)
+	if err != nil {
+		// Fallback to a safe static response if marshalling fails
+		_, _ = w.Write([]byte(`{"type":"error","title":"Error","status":500}`))
+		return
+	}
+	_, _ = w.Write(response)
 }
 
 // getErrorTitle returns the title for an error code.

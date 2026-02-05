@@ -156,6 +156,25 @@ func (s *RefundService) Create(ctx context.Context, req *CreateRefundRequest) (*
 		UpdatedAt:             now,
 	}
 
+	// TODO: Persist refund record to database. Currently the refund struct is only
+	// held in memory and will be lost on restart. Add a CreateRefund query to sqlc
+	// (internal/repository/postgres/queries/refunds.sql) and call it here:
+	//   _, err = s.queries.CreateRefund(ctx, db.CreateRefundParams{
+	//       ID:                    pgtype.UUID{Bytes: refund.ID, Valid: true},
+	//       OrganizationID:       pgtype.UUID{Bytes: refund.OrganizationID, Valid: true},
+	//       OriginalLedgerEntryID: pgtype.UUID{Bytes: refund.OriginalLedgerEntryID, Valid: true},
+	//       RefundLedgerEntryID:  pgtype.UUID{Bytes: *refund.RefundLedgerEntryID, Valid: true},
+	//       AmountKurus:          int32(refund.AmountKurus),
+	//       Reason:               refund.Reason,
+	//       Status:               refund.Status,
+	//       ApprovedBy:           ... ,
+	//       ApprovedAt:           ... ,
+	//       CompletedAt:          ... ,
+	//   })
+	//   if err != nil {
+	//       return nil, fmt.Errorf("failed to persist refund record: %w", err)
+	//   }
+
 	s.logger.Info("Refund processed successfully",
 		"refund_id", refund.ID,
 		"organization_id", req.OrganizationID,
@@ -226,6 +245,10 @@ func (s *RefundService) CreateManual(ctx context.Context, req *CreateManualRefun
 		UpdatedAt:             now,
 	}
 
+	// TODO: Persist manual refund record to database. Same issue as Create method
+	// above -- refund struct is only in memory and lost on restart. Add CreateRefund
+	// query to sqlc and call it here to persist the pending refund.
+
 	s.logger.Info("Manual refund request created",
 		"refund_id", refund.ID,
 		"organization_id", req.OrganizationID,
@@ -256,8 +279,19 @@ func (s *RefundService) Approve(ctx context.Context, req *ApproveRefundRequest) 
 
 // Get retrieves a refund by ID.
 func (s *RefundService) Get(ctx context.Context, refundID, organizationID uuid.UUID) (*Refund, error) {
-	// In a full implementation, this would query the refunds table
-	// For now, we can reconstruct refund info from ledger entries
+	// TODO: Query refunds table when CreateRefund query is added to sqlc.
+	// Once refund records are persisted (see TODO in Create method), implement
+	// this by calling:
+	//   row, err := s.queries.GetRefundByID(ctx, refundID)
+	//   if err != nil {
+	//       if errors.Is(err, pgx.ErrNoRows) {
+	//           return nil, ErrRefundNotFound
+	//       }
+	//       return nil, fmt.Errorf("failed to get refund: %w", err)
+	//   }
+	//   // Verify organization ownership
+	//   if row.OrganizationID != organizationID { return nil, ErrRefundNotFound }
+	//   return convertRowToRefund(row), nil
 	return nil, ErrRefundNotFound
 }
 

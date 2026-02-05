@@ -68,6 +68,10 @@ type ArasWebhookPayload struct {
 }
 
 // HandleWebhook handles incoming tracking webhooks from Aras Kargo.
+// TODO(security): Add webhook signature verification for Aras carrier webhooks.
+// Currently, any request with a valid XML payload is accepted without authenticating
+// the sender. Aras should provide an HMAC signature or shared secret mechanism
+// to verify that webhooks originate from their servers.
 func (h *ArasWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
