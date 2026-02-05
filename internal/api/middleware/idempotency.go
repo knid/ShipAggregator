@@ -216,6 +216,9 @@ func Idempotency(cfg IdempotencyConfig) func(http.Handler) http.Handler {
 						)
 					}
 				}
+			} else if cfg.Cache != nil {
+				// Release the lock on non-2xx responses so the key can be retried
+				releaseIdempotencyLock(r.Context(), cfg.Cache, cacheKey)
 			}
 		})
 	}
@@ -250,12 +253,7 @@ func requiresIdempotency(method string, requiredMethods []string) bool {
 
 // shouldSkipIdempotency checks if the path should skip idempotency.
 func shouldSkipIdempotency(path string, skipPaths []string) bool {
-	for _, skip := range skipPaths {
-		if path == skip || strings.HasPrefix(path, skip) {
-			return true
-		}
-	}
-	return false
+	return matchSkipPath(path, skipPaths)
 }
 
 // isValidIdempotencyKey validates the idempotency key format.
@@ -288,10 +286,10 @@ func calculateRequestHash(r *http.Request) (string, error) {
 	// Restore the body for the handler
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	// Create hash from method, path, and body
+	// Create hash from method, full request URI (including query params), and body
 	h := sha256.New()
 	h.Write([]byte(r.Method))
-	h.Write([]byte(r.URL.Path))
+	h.Write([]byte(r.URL.RequestURI()))
 	h.Write(body)
 
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -314,22 +312,18 @@ func getCachedResult(ctx context.Context, cache *redis.Cache, key string) (*Idem
 // acquireIdempotencyLock tries to acquire a lock for an idempotency key.
 func acquireIdempotencyLock(ctx context.Context, cache *redis.Cache, key string, ttl time.Duration) (bool, error) {
 	lockKey := key + ":lock"
-	// Use SetNX-like behavior through the cache
-	// This is a simplified implementation - in production, use proper distributed locking
-	var existing string
-	err := cache.Get(ctx, lockKey, &existing)
-	if err == nil && existing != "" {
-		// Lock exists
-		return false, nil
-	}
-
-	// Try to set the lock
-	err = cache.SetWithTTL(ctx, lockKey, "locked", ttl)
+	// Use atomic SetNX to prevent race conditions between GET and SET
+	acquired, err := cache.SetNX(ctx, lockKey, "locked", ttl)
 	if err != nil {
 		return false, err
 	}
+	return acquired, nil
+}
 
-	return true, nil
+// releaseIdempotencyLock releases the lock for an idempotency key.
+func releaseIdempotencyLock(ctx context.Context, cache *redis.Cache, key string) {
+	lockKey := key + ":lock"
+	_ = cache.Delete(ctx, lockKey)
 }
 
 // cacheResult stores an idempotency result in the cache.

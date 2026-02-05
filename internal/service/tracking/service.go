@@ -278,7 +278,7 @@ func shouldUpdateShipmentStatus(currentStatus, newStatus string) bool {
 }
 
 // GetTrackingHistory retrieves the complete tracking history for a shipment.
-func (s *Service) GetTrackingHistory(ctx context.Context, shipmentID uuid.UUID) (*domain.TrackingHistory, error) {
+func (s *Service) GetTrackingHistory(ctx context.Context, shipmentID uuid.UUID, organizationID uuid.UUID) (*domain.TrackingHistory, error) {
 	// Get shipment
 	shipment, err := s.queries.GetShipmentByID(ctx, shipmentID)
 	if err != nil {
@@ -286,6 +286,11 @@ func (s *Service) GetTrackingHistory(ctx context.Context, shipmentID uuid.UUID) 
 			return nil, ErrShipmentNotFound
 		}
 		return nil, err
+	}
+
+	// Verify organization ownership
+	if shipment.OrganizationID != organizationID {
+		return nil, ErrShipmentNotFound
 	}
 
 	// Get tracking events

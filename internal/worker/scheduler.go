@@ -48,27 +48,38 @@ func NewScheduler(cfg *config.Config, opts ...SchedulerOption) (*Scheduler, erro
 		loc = time.UTC
 	}
 
+	// Pre-apply options to extract the configured logger before creating the asynq scheduler
+	s := &Scheduler{
+		logger: slog.Default(),
+		cfg:    cfg,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	logger := s.logger
+
 	scheduler := asynq.NewScheduler(
 		redisOpts,
 		&asynq.SchedulerOpts{
 			Location: loc,
-			Logger:   newAsynqLogger(slog.Default()),
+			Logger:   newAsynqLogger(logger),
 			LogLevel: asynq.InfoLevel,
 			PreEnqueueFunc: func(task *asynq.Task, opts []asynq.Option) {
-				slog.Debug("enqueueing scheduled task",
+				logger.Debug("enqueueing scheduled task",
 					"type", task.Type(),
 					"payload_size", len(task.Payload()),
 				)
 			},
 			PostEnqueueFunc: func(info *asynq.TaskInfo, err error) {
 				if err != nil {
-					slog.Error("failed to enqueue scheduled task",
+					logger.Error("failed to enqueue scheduled task",
 						"type", info.Type,
 						"error", err,
 					)
 					return
 				}
-				slog.Debug("scheduled task enqueued",
+				logger.Debug("scheduled task enqueued",
 					"type", info.Type,
 					"queue", info.Queue,
 					"task_id", info.ID,
@@ -77,16 +88,7 @@ func NewScheduler(cfg *config.Config, opts ...SchedulerOption) (*Scheduler, erro
 		},
 	)
 
-	s := &Scheduler{
-		scheduler: scheduler,
-		logger:    slog.Default(),
-		cfg:       cfg,
-	}
-
-	// Apply options
-	for _, opt := range opts {
-		opt(s)
-	}
+	s.scheduler = scheduler
 
 	return s, nil
 }

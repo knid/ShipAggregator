@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -365,8 +366,28 @@ type CreateEndpointRequest struct {
 	IsActive       bool
 }
 
+// validateWebhookEndpointURL validates that a webhook endpoint URL is valid and uses HTTPS.
+func validateWebhookEndpointURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("webhook endpoints must use HTTPS")
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("webhook URL must have a host")
+	}
+	return nil
+}
+
 // CreateEndpoint creates a new webhook endpoint.
 func (p *Publisher) CreateEndpoint(ctx context.Context, req *CreateEndpointRequest) (*db.WebhookEndpoint, error) {
+	// Validate webhook URL
+	if err := validateWebhookEndpointURL(req.URL); err != nil {
+		return nil, fmt.Errorf("webhook: invalid endpoint URL: %w", err)
+	}
+
 	return p.queries.CreateWebhookEndpoint(ctx, db.CreateWebhookEndpointParams{
 		OrganizationID: req.OrganizationID,
 		Url:            req.URL,

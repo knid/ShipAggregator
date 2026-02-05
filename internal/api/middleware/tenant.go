@@ -244,9 +244,10 @@ func SetRLSContextStdDB(ctx context.Context, conn interface {
 	return nil
 }
 
-// WithRLSContext executes a function with RLS context set on the connection.
-// This is a helper for executing queries with proper tenant isolation.
-func WithRLSContext(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, conn *pgxpool.Conn) error) error {
+// WithRLSContext executes a function with RLS context set within a transaction.
+// The callback receives the transaction (pgx.Tx) so queries use the same
+// connection where SET LOCAL was applied.
+func WithRLSContext(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return err
@@ -264,13 +265,13 @@ func WithRLSContext(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context
 		}
 	}()
 
-	// Set RLS context
+	// Set RLS context on the transaction
 	if err = SetRLSContext(ctx, tx); err != nil {
 		return err
 	}
 
-	// Execute the function
-	if err = fn(ctx, conn); err != nil {
+	// Execute the function with the transaction (not the raw conn)
+	if err = fn(ctx, tx); err != nil {
 		return err
 	}
 
@@ -342,12 +343,7 @@ func RequireOrganizationStatus(allowedStatuses ...string) func(http.Handler) htt
 
 // shouldSkipTenant checks if the path should skip tenant context.
 func shouldSkipTenant(path string, skipPaths []string) bool {
-	for _, skip := range skipPaths {
-		if path == skip || (len(skip) > 0 && skip[len(skip)-1] == '*' && len(path) >= len(skip)-1 && path[:len(skip)-1] == skip[:len(skip)-1]) {
-			return true
-		}
-	}
-	return false
+	return matchSkipPath(path, skipPaths)
 }
 
 // writeTenantError writes a tenant error response.
@@ -397,7 +393,7 @@ func (h *TenantAwareHandler) WithTx(ctx context.Context, fn func(ctx context.Con
 	return tx.Commit(ctx)
 }
 
-// WithConn executes a function with a connection that has RLS context set.
-func (h *TenantAwareHandler) WithConn(ctx context.Context, fn func(ctx context.Context, conn *pgxpool.Conn) error) error {
+// WithConn executes a function with a transaction that has RLS context set.
+func (h *TenantAwareHandler) WithConn(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	return WithRLSContext(ctx, h.pool, fn)
 }

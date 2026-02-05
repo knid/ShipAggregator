@@ -6,10 +6,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 // AES-256-GCM constants
@@ -203,17 +206,17 @@ func GenerateKey() ([]byte, error) {
 }
 
 // DeriveKeyFromMaster derives an organization-specific key from a master key.
-// This uses a simple approach suitable for the current requirements.
-// For production, consider using HKDF or similar KDF.
-// The orgID should be the organization's UUID bytes.
+// Uses HKDF (RFC 5869) with SHA-256 for proper cryptographic key derivation.
+// The orgID is used as the salt, and a fixed info string provides domain separation.
 func DeriveKeyFromMaster(masterKey []byte, orgID []byte) ([]byte, error) {
 	if len(masterKey) != AESKeySize {
 		return nil, ErrInvalidKeySize
 	}
 
-	// Use HMAC-SHA256 to derive a key
-	// This provides a simple but secure key derivation
-	derivedKey := HMACSHA256(masterKey, orgID)
-
-	return derivedKey, nil
+	hkdfReader := hkdf.New(sha256.New, masterKey, orgID, []byte("credential-encryption"))
+	key := make([]byte, AESKeySize) // AES-256
+	if _, err := io.ReadFull(hkdfReader, key); err != nil {
+		return nil, fmt.Errorf("failed to derive key: %w", err)
+	}
+	return key, nil
 }

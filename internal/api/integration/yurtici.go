@@ -67,6 +67,10 @@ type YurticiWebhookPayload struct {
 }
 
 // HandleWebhook handles incoming tracking webhooks from Yurtiçi Kargo.
+// TODO(security): Add webhook signature verification for Yurtiçi carrier webhooks.
+// Currently, any request with a valid XML payload is accepted without authenticating
+// the sender. Yurtiçi should provide an HMAC signature or shared secret mechanism
+// to verify that webhooks originate from their servers.
 func (h *YurticiWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

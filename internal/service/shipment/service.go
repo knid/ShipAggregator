@@ -253,7 +253,10 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		}
 	}
 
-	// For marketplace shipments, check wallet balance and charge
+	// For marketplace shipments, perform a soft balance check before calling the provider.
+	// NOTE: This is a soft check only - the authoritative balance guard is the Debit call
+	// after label purchase, which holds a row lock. This check exists to fail fast for
+	// clearly insufficient balances and avoid unnecessary provider calls.
 	// For BYOA shipments, customer pays provider directly - no wallet charge
 	if !isBYOA {
 		hasSufficientBalance, err := s.walletService.HasSufficientBalance(ctx, req.OrganizationID, int64(priceKurus))
@@ -401,7 +404,9 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		return nil, fmt.Errorf("failed to update shipment: %w", err)
 	}
 
-	// Debit wallet only for marketplace shipments
+	// Debit wallet only for marketplace shipments.
+	// This is the authoritative balance guard - it acquires a row lock on the wallet
+	// balance, preventing double-spend even if two requests pass the soft check above.
 	if !isBYOA && priceKurus > 0 {
 		_, err = s.ledgerService.Debit(ctx, &billing.DebitRequest{
 			OrganizationID: req.OrganizationID,
@@ -424,8 +429,7 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 				"shipment_id", shipment.ID,
 				"amount_kurus", priceKurus,
 			)
-			// Note: In production, this should be handled with a saga/compensation pattern
-			// For now, we log the error but don't fail the operation
+			return nil, fmt.Errorf("failed to debit wallet: %w", err)
 		}
 	}
 
@@ -443,8 +447,7 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 				"shipment_id", shipment.ID,
 				"cod_amount_kurus", *shipment.CodAmountKurus,
 			)
-			// Note: We don't fail the operation if COD settlement creation fails
-			// The settlement can be created manually later
+			return nil, fmt.Errorf("failed to create COD settlement: %w", err)
 		} else {
 			s.logger.Info("COD settlement record created",
 				"shipment_id", shipment.ID,
@@ -609,7 +612,10 @@ func (s *Service) Cancel(ctx context.Context, req *CancelRequest) (*db.Shipment,
 					"shipment_id", shipment.ID,
 					"provider_code", shipment.ProviderCode,
 				)
-				// Continue with local cancellation even if provider fails
+				// Design decision: We intentionally proceed with local cancellation even
+				// if the provider cancel fails. This ensures the customer is not stuck with
+				// an uncancellable shipment due to transient provider errors. The provider-side
+				// state will be reconciled asynchronously via the tracking/webhook pipeline.
 			}
 		}
 

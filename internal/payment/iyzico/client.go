@@ -193,6 +193,11 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body in
 		"duration_ms", duration.Milliseconds(),
 	)
 
+	// Check HTTP status code
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("iyzico API returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	// Parse response
 	if response != nil {
 		if err := json.Unmarshal(respBody, response); err != nil {

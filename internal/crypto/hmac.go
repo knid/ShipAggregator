@@ -76,8 +76,9 @@ func NewWebhookSignerWithTolerance(secret string, tolerance time.Duration) (*Web
 // The signature format is: v1=<hex-encoded-hmac>
 // The signed message is: <timestamp>.<payload>
 func (s *WebhookSigner) Sign(payload []byte, timestamp int64) string {
-	message := fmt.Sprintf("%d.%s", timestamp, string(payload))
-	signature := HMACSHA256Hex(s.secret, []byte(message))
+	prefix := []byte(fmt.Sprintf("%d.", timestamp))
+	message := append(prefix, payload...)
+	signature := HMACSHA256Hex(s.secret, message)
 	return SignaturePrefix + signature
 }
 
@@ -148,9 +149,10 @@ func constantTimeCompare(a, b string) bool {
 // It creates a signature in the format: v1=<hex-encoded-hmac>
 // The signed message is: <timestamp>.<payload>
 func SignWebhook(payload []byte, secret string, timestamp int64) string {
-	message := fmt.Sprintf("%d.%s", timestamp, string(payload))
+	prefix := []byte(fmt.Sprintf("%d.", timestamp))
+	message := append(prefix, payload...)
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(message))
+	mac.Write(message)
 	return fmt.Sprintf("v1=%x", mac.Sum(nil))
 }
 

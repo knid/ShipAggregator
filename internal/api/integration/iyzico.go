@@ -96,9 +96,14 @@ func (h *IyzicoHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify webhook signature
+	// Verify webhook signature - require the header to be present
 	signature := r.Header.Get("X-IYZ-SIGNATURE")
-	if signature != "" && !h.iyzicoClient.VerifyWebhookSignature(body, signature) {
+	if signature == "" {
+		h.logger.Warn("Missing Iyzico webhook signature header")
+		http.Error(w, "Missing signature", http.StatusUnauthorized)
+		return
+	}
+	if !h.iyzicoClient.VerifyWebhookSignature(body, signature) {
 		h.logger.Warn("Invalid Iyzico webhook signature")
 		http.Error(w, "Invalid signature", http.StatusUnauthorized)
 		return

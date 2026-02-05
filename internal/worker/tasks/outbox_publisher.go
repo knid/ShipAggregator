@@ -121,12 +121,7 @@ func (h *OutboxPublisherHandler) publishEntry(ctx context.Context, entry *db.Out
 	case "webhook":
 		return h.publishWebhookEvent(ctx, entry, payload)
 	default:
-		h.logger.Warn("Unknown aggregate type",
-			"aggregate_type", entry.AggregateType,
-			"event_type", entry.EventType,
-		)
-		// Mark as published to avoid infinite retries
-		return nil
+		return fmt.Errorf("unknown aggregate type: %s", entry.AggregateType)
 	}
 }
 

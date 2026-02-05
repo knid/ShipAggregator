@@ -119,24 +119,44 @@ func (h *ReconciliationHandler) ProcessTask(ctx context.Context, task *asynq.Tas
 	if err := h.verifyLedgerInvariants(ctx, result); err != nil {
 		h.logger.Error("Failed to verify ledger invariants", "error", err)
 		result.Status = "error"
+		// Skip subsequent steps if ledger invariant check fails
+		result.CompletedAt = time.Now()
+		resultJSON, _ := json.Marshal(result)
+		h.storeReconciliationResult(ctx, result, resultJSON)
+		return fmt.Errorf("reconciliation aborted: ledger invariant check failed: %w", err)
 	}
 
 	// Step 2: Check for pending/stuck top-ups
 	if err := h.checkTopupDiscrepancies(ctx, result, reconcileDate); err != nil {
 		h.logger.Error("Failed to check topup discrepancies", "error", err)
 		result.Status = "error"
+		// Skip subsequent steps if topup check fails
+		result.CompletedAt = time.Now()
+		resultJSON, _ := json.Marshal(result)
+		h.storeReconciliationResult(ctx, result, resultJSON)
+		return fmt.Errorf("reconciliation aborted: topup discrepancy check failed: %w", err)
 	}
 
 	// Step 3: Check COD settlements
 	if err := h.checkCODSettlements(ctx, result, reconcileDate); err != nil {
 		h.logger.Error("Failed to check COD settlements", "error", err)
 		result.Status = "error"
+		// Skip subsequent steps if COD settlement check fails
+		result.CompletedAt = time.Now()
+		resultJSON, _ := json.Marshal(result)
+		h.storeReconciliationResult(ctx, result, resultJSON)
+		return fmt.Errorf("reconciliation aborted: COD settlement check failed: %w", err)
 	}
 
 	// Step 4: Verify shipment billing
 	if err := h.verifyShipmentBilling(ctx, result, reconcileDate); err != nil {
 		h.logger.Error("Failed to verify shipment billing", "error", err)
 		result.Status = "error"
+		// Skip subsequent steps if shipment billing check fails
+		result.CompletedAt = time.Now()
+		resultJSON, _ := json.Marshal(result)
+		h.storeReconciliationResult(ctx, result, resultJSON)
+		return fmt.Errorf("reconciliation aborted: shipment billing check failed: %w", err)
 	}
 
 	// Step 5: Calculate daily totals
