@@ -425,8 +425,8 @@ func GetCredentialSchema(providerCode domain.ProviderCode) []CredentialField {
 			{Name: "customer_code", Type: "string", Required: true, Sensitive: false, Label: "Customer Code"},
 		},
 		domain.ProviderCodeYurtici: {
-			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Username"},
-			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Password"},
+			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Web Servis Kullanıcı Adı"},
+			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Web Servis Şifresi"},
 		},
 	}
 

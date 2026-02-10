@@ -2,7 +2,6 @@ package yurtici
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -15,23 +14,20 @@ import (
 )
 
 const (
-	// ProviderCode is the unique identifier for Yurtiçi Kargo.
+	// ProviderCode is the unique identifier for Yurtici Kargo.
 	ProviderCode = domain.ProviderCodeYurtici
 
-	// DefaultEndpoint is the default SOAP endpoint for Yurtiçi.
-	DefaultEndpoint = "https://webservices.yurticikargo.com/KOPSWebServices/ShippingOrderDispatcherServices"
+	// DefaultEndpoint is the default SOAP endpoint for Yurtici.
+	DefaultEndpoint = "https://ws.yurticikargo.com/KOPSWebServices/ShippingOrderDispatcherServices"
 
-	// SandboxEndpoint is the sandbox SOAP endpoint for Yurtiçi.
-	SandboxEndpoint = "https://testwebservices.yurticikargo.com/KOPSWebServices/ShippingOrderDispatcherServices"
+	// SandboxEndpoint is the sandbox SOAP endpoint for Yurtici.
+	SandboxEndpoint = "https://testws.yurticikargo.com/KOPSWebServices/ShippingOrderDispatcherServices"
 
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
-
-	// QuoteValidityDuration is how long quotes are valid.
-	QuoteValidityDuration = 1 * time.Hour
 )
 
-// Config contains configuration for the Yurtiçi adapter.
+// Config contains configuration for the Yurtici adapter.
 type Config struct {
 	// Endpoint is the SOAP service endpoint URL.
 	Endpoint string
@@ -55,7 +51,7 @@ func DefaultConfig() Config {
 	}
 }
 
-// Adapter implements the provider.Adapter interface for Yurtiçi Kargo.
+// Adapter implements the provider.Adapter interface for Yurtici Kargo.
 type Adapter struct {
 	provider.BaseAdapter
 	config     Config
@@ -63,7 +59,7 @@ type Adapter struct {
 	logger     *slog.Logger
 }
 
-// NewAdapter creates a new Yurtiçi adapter.
+// NewAdapter creates a new Yurtici adapter.
 func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -112,39 +108,33 @@ func NewAdapterFromProviderConfig(cfg provider.AdapterConfig, logger *slog.Logge
 	return NewAdapter(config, logger)
 }
 
-// getCredentials extracts Yurtiçi credentials from domain credentials.
+// getCredentials extracts Yurtici credentials from domain credentials.
 func (a *Adapter) getCredentials(creds *domain.ProviderCredentials) (*Credentials, error) {
 	if creds == nil {
 		return nil, provider.ErrInvalidCredentials
 	}
 
 	c := &Credentials{
-		Username:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     LanguageTurkish,
+		Username: creds.Username,
+		Password: creds.Password,
+		Language: LanguageTurkish,
 	}
 
-	// Check for extra fields
-	if c.CustomerCode == "" && creds.Extra != nil {
-		if code, ok := creds.Extra["customer_code"]; ok {
-			c.CustomerCode = code
-		}
-	}
 	if creds.Extra != nil {
 		if lang, ok := creds.Extra["language"]; ok {
 			c.Language = lang
 		}
 	}
 
-	if c.Username == "" || c.Password == "" || c.CustomerCode == "" {
+	if c.Username == "" || c.Password == "" {
 		return nil, provider.ErrInvalidCredentials
 	}
 
 	return c, nil
 }
 
-// VerifyCredentials validates the provided credentials with Yurtiçi API.
+// VerifyCredentials validates the provided credentials with Yurtici API.
+// Uses queryShipment with a dummy key: auth failure = invalid, key-not-found = valid.
 func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCredentials) (*provider.VerificationResult, error) {
 	c, err := a.getCredentials(&creds)
 	if err != nil {
@@ -154,15 +144,29 @@ func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCr
 		}, nil
 	}
 
-	req := &VerifyCredentialsRequest{
-		UserName:     c.Username,
-		Password:     c.Password,
-		CustomerCode: c.CustomerCode,
-		Language:     c.Language,
+	req := &QueryShipmentRequest{
+		XMLNSSer:          soapNamespace,
+		WsUserName:        c.Username,
+		WsPassword:        c.Password,
+		WsLanguage:        c.Language,
+		Keys:              []string{"__VERIFY__"},
+		KeyType:           0,
+		AddHistoricalData: false,
+		OnlyTracking:      false,
 	}
 
-	var resp VerifyCredentialsResponse
-	if err := a.soapClient.Call(ctx, "LoginCheck", req, &resp); err != nil {
+	var resp QueryShipmentResponse
+	if err := a.soapClient.Call(ctx, "queryShipment", req, &resp); err != nil {
+		// SOAP fault or HTTP error likely means auth failure
+		var provErr *provider.ProviderError
+		if ok := isProviderError(err, &provErr); ok {
+			if provErr.ProviderCode == "Server" || strings.Contains(provErr.Message, "auth") {
+				return &provider.VerificationResult{
+					Success: false,
+					Error:   "Authentication failed",
+				}, nil
+			}
+		}
 		a.logger.Error("failed to verify credentials",
 			slog.String("provider", string(ProviderCode)),
 			slog.String("error", err.Error()),
@@ -170,182 +174,114 @@ func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCr
 		return nil, fmt.Errorf("failed to verify credentials: %w", err)
 	}
 
-	if !resp.Result.Success {
+	// outFlag "2" with error code 936 = unexpected error (likely auth)
+	if resp.Result.OutFlag == "2" {
 		return &provider.VerificationResult{
 			Success: false,
-			Error:   resp.Result.ErrorMessage,
+			Error:   resp.Result.OutResult,
+		}, nil
+	}
+
+	// If we get details with errCode 82519 (key not found), credentials are valid
+	if len(resp.Result.ShippingDeliveryDetailVO) > 0 {
+		detail := resp.Result.ShippingDeliveryDetailVO[0]
+		if detail.ErrCode == "82519" {
+			return &provider.VerificationResult{
+				Success: true,
+			}, nil
+		}
+	}
+
+	// outFlag "0" means the request was accepted, so credentials are valid
+	if resp.Result.OutFlag == "0" || resp.Result.OutFlag == "1" {
+		return &provider.VerificationResult{
+			Success: true,
 		}, nil
 	}
 
 	return &provider.VerificationResult{
-		Success: true,
-		AccountInfo: &provider.AccountInfo{
-			AccountNumber: resp.Result.AccountNumber,
-			CompanyName:   resp.Result.CompanyName,
-			ContractType:  resp.Result.ContractType,
-		},
+		Success: false,
+		Error:   resp.Result.OutResult,
 	}, nil
 }
 
-// GetQuote retrieves shipping quotes from Yurtiçi.
-func (a *Adapter) GetQuote(ctx context.Context, req provider.QuoteRequest) (*provider.QuoteResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate desi (volumetric weight)
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-
-	soapReq := &GetQuoteRequest{
-		UserName:         creds.Username,
-		Password:         creds.Password,
-		CustomerCode:     creds.CustomerCode,
-		Language:         creds.Language,
-		SenderCityCode:   req.Origin.CityCode,
-		SenderTownCode:   req.Origin.DistrictCode,
-		ReceiverCityCode: req.Destination.CityCode,
-		ReceiverTownCode: req.Destination.DistrictCode,
-		Weight:           float64(req.Parcel.WeightGrams) / 1000.0, // Convert to kg
-		Desi:             desi,
-		CargoType:        CargoTypeParcel,
-	}
-
-	if req.CODAmountKurus != nil {
-		soapReq.CODAmount = float64(*req.CODAmountKurus) / 100.0 // Convert to TRY
-	}
-	if req.DeclaredValueKurus != nil {
-		soapReq.DeclaredValue = float64(*req.DeclaredValueKurus) / 100.0
-	}
-	if req.ServiceCode != "" {
-		soapReq.ProductCode = MapProductCode(req.ServiceCode)
-	}
-
-	var resp GetQuoteResponse
-	if err := a.soapClient.Call(ctx, "GetPrice", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get quote",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get quote: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return &provider.QuoteResponse{
-			Offers: []provider.ProviderOffer{},
-			Errors: []provider.ProviderError{
-				{
-					Code:            MapErrorCode(resp.Result.ErrorCode),
-					Message:         resp.Result.ErrorMessage,
-					ProviderCode:    resp.Result.ErrorCode,
-					ProviderMessage: resp.Result.ErrorMessage,
-					Retryable:       IsRetryableError(resp.Result.ErrorCode),
-				},
-			},
-		}, nil
-	}
-
-	offers := make([]provider.ProviderOffer, 0, len(resp.Result.Prices))
-	for _, p := range resp.Result.Prices {
-		expiresAt := time.Now().Add(QuoteValidityDuration)
-		if p.ValidUntil != "" {
-			if parsed, err := time.Parse(time.RFC3339, p.ValidUntil); err == nil {
-				expiresAt = parsed
-			}
-		}
-
-		offers = append(offers, provider.ProviderOffer{
-			ServiceCode:        strings.ToLower(p.ProductCode),
-			ServiceName:        p.ProductName,
-			BasePriceKurus:     int64(p.BasePrice * 100),
-			FuelSurchargeKurus: int64(p.FuelSurcharge * 100),
-			CODFeeKurus:        int64(p.CODFee * 100),
-			InsuranceFeeKurus:  int64(p.InsuranceFee * 100),
-			VATKurus:           int64(p.VAT * 100),
-			TotalPriceKurus:    int64(p.TotalPrice * 100),
-			EstimatedDaysMin:   p.EstimatedDaysMin,
-			EstimatedDaysMax:   p.EstimatedDaysMax,
-			ProviderQuoteID:    p.QuoteID,
-			ExpiresAt:          expiresAt,
-		})
-	}
-
-	return &provider.QuoteResponse{
-		Offers: offers,
-	}, nil
+// GetQuote is not supported by Yurtici API (no pricing endpoint).
+func (a *Adapter) GetQuote(_ context.Context, _ provider.QuoteRequest) (*provider.QuoteResponse, error) {
+	return nil, a.UnsupportedOperation("GetQuote")
 }
 
-// CreateShipment creates a new shipment with Yurtiçi.
+// CreateShipment creates a new shipment with Yurtici.
 func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmentRequest) (*provider.CreateShipmentResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
+	// Generate cargoKey from reference or use a truncated unique key
+	cargoKey := req.Reference
+	if cargoKey == "" {
+		cargoKey = fmt.Sprintf("CK%d", time.Now().UnixNano()%1e16)
+	}
+	if len(cargoKey) > 20 {
+		cargoKey = cargoKey[:20]
+	}
+
+	// invoiceKey = cargoKey (fatura bazli mode)
+	invoiceKey := cargoKey
+
+	// Build receiver address
+	receiverAddress := buildAddressString(req.Destination)
+
+	// Build receiver name
+	receiverName := req.Destination.ContactName
+	if req.Destination.CompanyName != nil && *req.Destination.CompanyName != "" {
+		receiverName = *req.Destination.CompanyName + " - " + receiverName
+	}
+
 	// Calculate desi
 	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
+	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
 
-	// Build address strings
-	originAddress := buildAddressString(req.Origin)
-	destAddress := buildAddressString(req.Destination)
+	order := ShippingOrderVO{
+		CargoKey:         cargoKey,
+		InvoiceKey:       invoiceKey,
+		ReceiverCustName: receiverName,
+		ReceiverAddress:  receiverAddress,
+		ReceiverPhone1:   formatPhone(req.Destination.Phone),
+		CityName:         req.Destination.City,
+		TownName:         req.Destination.District,
+		Desi:             fmt.Sprintf("%.3f", desi),
+		Kg:               fmt.Sprintf("%.3f", weightKg),
+		CargoCount:       1,
+	}
+
+	// Set email if present
+	if req.Destination.Email != nil && *req.Destination.Email != "" {
+		order.EmailAddress = *req.Destination.Email
+	}
+
+	// Set description if present
+	if req.Parcel.Description != nil {
+		order.Description = *req.Parcel.Description
+	}
+
+	// Map COD
+	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 {
+		order.TtCollectionType = "0" // Cash
+		order.TtInvoiceAmount = fmt.Sprintf("%.2f", float64(*req.CODAmountKurus)/100.0)
+		order.TtDocumentId = cargoKey
+	}
 
 	soapReq := &CreateShipmentRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		Shipment: ShipmentDetails{
-			ProductCode: MapProductCode(req.ServiceCode),
-			QuoteID:     req.ProviderQuoteID,
-			Reference:   req.Reference,
-			LabelFormat: MapLabelFormat(req.LabelFormat),
-			PaymentType: PaymentTypeSender,
-			CargoType:   CargoTypeParcel,
-			Sender: AddressDetails{
-				Name:       req.Origin.ContactName,
-				Phone:      formatPhone(req.Origin.Phone),
-				Email:      derefString(req.Origin.Email),
-				Address:    originAddress,
-				CityCode:   req.Origin.CityCode,
-				TownCode:   req.Origin.DistrictCode,
-				PostalCode: derefString(req.Origin.PostalCode),
-			},
-			Receiver: AddressDetails{
-				Name:       req.Destination.ContactName,
-				Phone:      formatPhone(req.Destination.Phone),
-				Email:      derefString(req.Destination.Email),
-				Address:    destAddress,
-				CityCode:   req.Destination.CityCode,
-				TownCode:   req.Destination.DistrictCode,
-				PostalCode: derefString(req.Destination.PostalCode),
-			},
-			Cargo: CargoDetails{
-				PieceCount:  1,
-				Weight:      float64(req.Parcel.WeightGrams) / 1000.0,
-				Desi:        desi,
-				Length:      float64(req.Parcel.LengthCm),
-				Width:       float64(req.Parcel.WidthCm),
-				Height:      float64(req.Parcel.HeightCm),
-				Description: derefString(req.Parcel.Description),
-			},
-		},
-	}
-
-	if req.Origin.CompanyName != nil && *req.Origin.CompanyName != "" {
-		soapReq.Shipment.Sender.CompanyName = *req.Origin.CompanyName
-	}
-	if req.Destination.CompanyName != nil && *req.Destination.CompanyName != "" {
-		soapReq.Shipment.Receiver.CompanyName = *req.Destination.CompanyName
-	}
-	if req.CODAmountKurus != nil {
-		soapReq.Shipment.CODAmount = float64(*req.CODAmountKurus) / 100.0
-	}
-	if req.DeclaredValueKurus != nil {
-		soapReq.Shipment.DeclaredValue = float64(*req.DeclaredValueKurus) / 100.0
+		XMLNSSer:       soapNamespace,
+		WsUserName:     creds.Username,
+		WsPassword:     creds.Password,
+		UserLanguage:   creds.Language,
+		ShippingOrders: []ShippingOrderVO{order},
 	}
 
 	var resp CreateShipmentResponse
-	if err := a.soapClient.Call(ctx, "CreateShipment", soapReq, &resp); err != nil {
+	if err := a.soapClient.Call(ctx, "createShipment", soapReq, &resp); err != nil {
 		a.logger.Error("failed to create shipment",
 			slog.String("provider", string(ProviderCode)),
 			slog.String("error", err.Error()),
@@ -353,38 +289,58 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 		return nil, fmt.Errorf("failed to create shipment: %w", err)
 	}
 
-	if !resp.Result.Success {
+	// Check outFlag: 0=at least one success, 1=all failed, 2=unexpected error
+	if resp.Result.OutFlag == "2" {
 		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
+			Code:            MapErrorCode("936"),
+			Message:         resp.Result.OutResult,
+			ProviderCode:    "936",
+			ProviderMessage: resp.Result.OutResult,
+			Retryable:       true,
 		}
 	}
 
-	result := &provider.CreateShipmentResponse{
-		ProviderShipmentID: resp.Result.ShipmentID,
-		TrackingNumber:     resp.Result.TrackingNumber,
-		Barcode:            resp.Result.Barcode,
+	if resp.Result.OutFlag == "1" {
+		// All failed - get error from detail
+		errMsg := resp.Result.OutResult
+		errCode := "1"
+		if len(resp.Result.ShippingOrderDetailVO) > 0 {
+			detail := resp.Result.ShippingOrderDetailVO[0]
+			errCode = detail.ErrCode
+			errMsg = MapErrorMessage(detail.ErrCode, detail.ErrMessage)
+		}
+		return nil, &provider.ProviderError{
+			Code:            MapErrorCode(errCode),
+			Message:         errMsg,
+			ProviderCode:    errCode,
+			ProviderMessage: errMsg,
+			Retryable:       IsRetryableError(errCode),
+		}
 	}
 
-	// Decode label if present
-	if resp.Result.LabelData != "" {
-		labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-		if err == nil {
-			result.Label = &provider.LabelData{
-				Format:      MapLabelFormatFromYurtici(resp.Result.LabelFormat),
-				Content:     labelBytes,
-				ContentType: MapContentType(resp.Result.LabelFormat),
+	// Success - check per-item detail
+	if len(resp.Result.ShippingOrderDetailVO) > 0 {
+		detail := resp.Result.ShippingOrderDetailVO[0]
+		if detail.ErrCode != "0" && detail.ErrCode != "" {
+			return nil, &provider.ProviderError{
+				Code:            MapErrorCode(detail.ErrCode),
+				Message:         MapErrorMessage(detail.ErrCode, detail.ErrMessage),
+				ProviderCode:    detail.ErrCode,
+				ProviderMessage: detail.ErrMessage,
+				Retryable:       IsRetryableError(detail.ErrCode),
 			}
 		}
 	}
 
-	return result, nil
+	// Yurtici does NOT return labels via API - labels are generated at branch
+	return &provider.CreateShipmentResponse{
+		ProviderShipmentID: resp.Result.JobId,
+		TrackingNumber:     cargoKey,
+		// Label: nil — labels generated at YK branch when package is received
+	}, nil
 }
 
-// CancelShipment cancels an existing shipment.
+// CancelShipment cancels an existing shipment using cancelShipment SOAP method.
 func (a *Adapter) CancelShipment(ctx context.Context, req provider.CancelShipmentRequest) (*provider.CancelShipmentResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
@@ -392,17 +348,15 @@ func (a *Adapter) CancelShipment(ctx context.Context, req provider.CancelShipmen
 	}
 
 	soapReq := &CancelShipmentRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		CargoKey:     req.TrackingNumber,
-		InvoiceKey:   req.ProviderShipmentID,
-		CancelReason: req.Reason,
+		XMLNSSer:     soapNamespace,
+		WsUserName:   creds.Username,
+		WsPassword:   creds.Password,
+		UserLanguage: creds.Language,
+		CargoKeys:    []string{req.TrackingNumber},
 	}
 
 	var resp CancelShipmentResponse
-	if err := a.soapClient.Call(ctx, "CancelShipment", soapReq, &resp); err != nil {
+	if err := a.soapClient.Call(ctx, "cancelShipment", soapReq, &resp); err != nil {
 		a.logger.Error("failed to cancel shipment",
 			slog.String("provider", string(ProviderCode)),
 			slog.String("error", err.Error()),
@@ -410,96 +364,98 @@ func (a *Adapter) CancelShipment(ctx context.Context, req provider.CancelShipmen
 		return nil, fmt.Errorf("failed to cancel shipment: %w", err)
 	}
 
-	if !resp.Result.Success {
+	// Check outFlag
+	if resp.Result.OutFlag == "2" {
 		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
+			Code:            "PROVIDER_ERROR",
+			Message:         resp.Result.OutResult,
+			ProviderCode:    "936",
+			ProviderMessage: resp.Result.OutResult,
+			Retryable:       true,
 		}
 	}
 
-	var refundAmount *int64
-	if resp.Result.RefundAmount > 0 {
-		amount := int64(resp.Result.RefundAmount * 100)
-		refundAmount = &amount
+	// Check per-item cancel detail
+	if len(resp.Result.ShippingCancelDetailVO) > 0 {
+		detail := resp.Result.ShippingCancelDetailVO[0]
+
+		if detail.ErrCode != "0" && detail.ErrCode != "" {
+			return nil, &provider.ProviderError{
+				Code:            MapErrorCode(detail.ErrCode),
+				Message:         MapErrorMessage(detail.ErrCode, detail.ErrMessage),
+				ProviderCode:    detail.ErrCode,
+				ProviderMessage: detail.ErrMessage,
+				Retryable:       IsRetryableError(detail.ErrCode),
+			}
+		}
+
+		opCode := detail.OperationCode
+
+		// DLV (5) = delivered, cannot cancel
+		if opCode == CancelOpDLV {
+			return nil, &provider.ProviderError{
+				Code:            "PROVIDER_REJECTED",
+				Message:         "Shipment has been delivered, cannot cancel",
+				ProviderCode:    opCode,
+				ProviderMessage: detail.OperationMessage,
+				Retryable:       false,
+			}
+		}
+
+		// ISC (4) = already cancelled
+		if IsCancelAlreadyCancelled(opCode) {
+			return &provider.CancelShipmentResponse{
+				Success: true,
+				Message: "Shipment was already cancelled",
+			}, nil
+		}
+
+		// IND (1) = return request sent for in-transit
+		if opCode == CancelOpIND {
+			return &provider.CancelShipmentResponse{
+				Success: true,
+				Message: "Return request sent for in-transit shipment",
+			}, nil
+		}
+
+		if IsCancelSuccess(opCode) {
+			return &provider.CancelShipmentResponse{
+				Success: true,
+			}, nil
+		}
 	}
 
 	return &provider.CancelShipmentResponse{
-		Success:           true,
-		RefundAmountKurus: refundAmount,
+		Success: true,
 	}, nil
 }
 
-// GetLabel retrieves the shipping label for a shipment.
-func (a *Adapter) GetLabel(ctx context.Context, req provider.GetLabelRequest) (*provider.GetLabelResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	soapReq := &GetLabelRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		CargoKey:     req.TrackingNumber,
-		InvoiceKey:   req.ProviderShipmentID,
-		LabelFormat:  MapLabelFormat(req.Format),
-	}
-
-	var resp GetLabelResponse
-	if err := a.soapClient.Call(ctx, "GetLabel", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get label",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get label: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode label data: %w", err)
-	}
-
-	return &provider.GetLabelResponse{
-		Label: provider.LabelData{
-			Format:      MapLabelFormatFromYurtici(resp.Result.LabelFormat),
-			Content:     labelBytes,
-			ContentType: MapContentType(resp.Result.LabelFormat),
-		},
-	}, nil
+// GetLabel is not supported by Yurtici API.
+// Labels/barcodes are generated at the YK branch when the package is physically received.
+func (a *Adapter) GetLabel(_ context.Context, _ provider.GetLabelRequest) (*provider.GetLabelResponse, error) {
+	return nil, a.UnsupportedOperation("GetLabel")
 }
 
-// GetTracking retrieves tracking information for a shipment.
+// GetTracking retrieves tracking information using queryShipment.
 func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingRequest) (*provider.GetTrackingResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
-	soapReq := &GetTrackingRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		CargoKey:     req.TrackingNumber,
-		InvoiceKey:   req.ProviderShipmentID,
+	soapReq := &QueryShipmentRequest{
+		XMLNSSer:          soapNamespace,
+		WsUserName:        creds.Username,
+		WsPassword:        creds.Password,
+		WsLanguage:        creds.Language,
+		Keys:              []string{req.TrackingNumber},
+		KeyType:           0, // cargo key
+		AddHistoricalData: true,
+		OnlyTracking:      false,
 	}
 
-	var resp GetTrackingResponse
-	if err := a.soapClient.Call(ctx, "QueryShipment", soapReq, &resp); err != nil {
+	var resp QueryShipmentResponse
+	if err := a.soapClient.Call(ctx, "queryShipment", soapReq, &resp); err != nil {
 		a.logger.Error("failed to get tracking",
 			slog.String("provider", string(ProviderCode)),
 			slog.String("error", err.Error()),
@@ -507,44 +463,89 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 		return nil, fmt.Errorf("failed to get tracking: %w", err)
 	}
 
-	if !resp.Result.Success {
+	// Check outFlag
+	if resp.Result.OutFlag == "2" {
 		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
+			Code:            "PROVIDER_ERROR",
+			Message:         resp.Result.OutResult,
+			ProviderCode:    "936",
+			ProviderMessage: resp.Result.OutResult,
+			Retryable:       true,
 		}
 	}
 
-	events := make([]provider.TrackingEventData, 0, len(resp.Result.Events))
-	for _, e := range resp.Result.Events {
-		occurredAt, _ := time.Parse(time.RFC3339, e.OccurredAt)
-		if occurredAt.IsZero() {
-			occurredAt, _ = time.Parse("2006-01-02T15:04:05", e.OccurredAt)
+	if len(resp.Result.ShippingDeliveryDetailVO) == 0 {
+		return nil, &provider.ProviderError{
+			Code:    "PROVIDER_NOT_FOUND",
+			Message: "Shipment not found",
+		}
+	}
+
+	detail := resp.Result.ShippingDeliveryDetailVO[0]
+
+	// Check for error
+	if detail.ErrCode != "0" && detail.ErrCode != "" {
+		return nil, &provider.ProviderError{
+			Code:            MapErrorCode(detail.ErrCode),
+			Message:         MapErrorMessage(detail.ErrCode, detail.ErrMessage),
+			ProviderCode:    detail.ErrCode,
+			ProviderMessage: detail.ErrMessage,
+			Retryable:       IsRetryableError(detail.ErrCode),
+		}
+	}
+
+	// Map current status from operationStatus
+	currentStatus := MapOperationStatus(detail.OperationStatus)
+
+	// Build events from historical tracking data
+	events := make([]provider.TrackingEventData, 0, len(detail.InvDocCargoVOArray))
+	for _, evt := range detail.InvDocCargoVOArray {
+		occurredAt := parseYurticiDateTime(evt.EventDate, evt.EventTime)
+
+		rawData, _ := json.Marshal(evt)
+
+		location := evt.CityName
+		locationDetail := evt.TownName
+		if evt.UnitName != "" {
+			if locationDetail != "" {
+				locationDetail = locationDetail + " - " + evt.UnitName
+			} else {
+				locationDetail = evt.UnitName
+			}
 		}
 
-		rawData, _ := json.Marshal(e)
-
 		events = append(events, provider.TrackingEventData{
-			StatusCode:        MapStatus(e.StatusCode),
-			StatusDescription: MapStatusDescription(e.StatusCode),
-			LocationCity:      e.LocationCity,
-			LocationDetail:    e.LocationDetail,
+			StatusCode:        MapEventId(evt.EventId),
+			StatusDescription: MapEventDescription(evt.EventId, evt.EventName),
+			LocationCity:      location,
+			LocationDetail:    locationDetail,
 			OccurredAt:        occurredAt,
-			RawStatusCode:     e.StatusCode,
+			RawStatusCode:     evt.EventId,
+			RawData:           rawData,
+		})
+	}
+
+	// If no historical events but we have a status, add a synthetic event
+	if len(events) == 0 {
+		rawData, _ := json.Marshal(detail)
+		events = append(events, provider.TrackingEventData{
+			StatusCode:        currentStatus,
+			StatusDescription: MapOperationStatusDescription(detail.OperationStatus),
+			OccurredAt:        time.Now(),
+			RawStatusCode:     detail.OperationStatus,
 			RawData:           rawData,
 		})
 	}
 
 	result := &provider.GetTrackingResponse{
-		CurrentStatus: MapStatus(resp.Result.StatusCode),
+		CurrentStatus: currentStatus,
 		Events:        events,
 	}
 
-	if resp.Result.EstimatedDelivery != "" {
-		if estimated, err := time.Parse(time.RFC3339, resp.Result.EstimatedDelivery); err == nil {
-			result.EstimatedDelivery = &estimated
+	// Parse delivery date if present
+	if detail.DeliveryDate != "" {
+		if delivered := parseYurticiDateTime(detail.DeliveryDate, detail.DeliveryTime); !delivered.IsZero() {
+			result.EstimatedDelivery = &delivered
 		}
 	}
 
@@ -552,7 +553,7 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 }
 
 // ParseTrackingWebhook parses an incoming tracking webhook payload.
-func (a *Adapter) ParseTrackingWebhook(ctx context.Context, payload []byte) ([]provider.TrackingWebhookEvent, error) {
+func (a *Adapter) ParseTrackingWebhook(_ context.Context, payload []byte) ([]provider.TrackingWebhookEvent, error) {
 	var webhookPayload TrackingWebhookPayload
 	if err := json.Unmarshal(payload, &webhookPayload); err != nil {
 		return nil, fmt.Errorf("failed to parse webhook payload: %w", err)
@@ -581,159 +582,34 @@ func (a *Adapter) ParseTrackingWebhook(ctx context.Context, payload []byte) ([]p
 	}, nil
 }
 
-// SchedulePickup schedules a pickup for shipments.
-func (a *Adapter) SchedulePickup(ctx context.Context, req provider.SchedulePickupRequest) (*provider.SchedulePickupResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	address := buildAddressString(req.Address)
-
-	soapReq := &SchedulePickupRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		PickupAddress: AddressDetails{
-			Name:       req.Address.ContactName,
-			Phone:      formatPhone(req.Address.Phone),
-			Address:    address,
-			CityCode:   req.Address.CityCode,
-			TownCode:   req.Address.DistrictCode,
-			PostalCode: derefString(req.Address.PostalCode),
-		},
-		ScheduledDate:   req.ScheduledDate.Format("2006-01-02"),
-		TimeWindowStart: req.TimeWindowStart,
-		TimeWindowEnd:   req.TimeWindowEnd,
-		ParcelCount:     req.ParcelCount,
-		TotalWeight:     float64(req.TotalWeightGrams) / 1000.0,
-		CargoKeys:       strings.Join(req.TrackingNumbers, ","),
-		Instructions:    req.Instructions,
-	}
-
-	var resp SchedulePickupResponse
-	if err := a.soapClient.Call(ctx, "SchedulePickup", soapReq, &resp); err != nil {
-		a.logger.Error("failed to schedule pickup",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to schedule pickup: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	confirmedDate, _ := time.Parse("2006-01-02", resp.Result.ConfirmedDate)
-
-	return &provider.SchedulePickupResponse{
-		PickupID:        resp.Result.PickupID,
-		ConfirmedDate:   confirmedDate,
-		TimeWindowStart: resp.Result.TimeWindowStart,
-		TimeWindowEnd:   resp.Result.TimeWindowEnd,
-	}, nil
+// SchedulePickup is not supported by Yurtici API.
+func (a *Adapter) SchedulePickup(_ context.Context, _ provider.SchedulePickupRequest) (*provider.SchedulePickupResponse, error) {
+	return nil, a.UnsupportedOperation("SchedulePickup")
 }
 
-// CancelPickup cancels a scheduled pickup.
-func (a *Adapter) CancelPickup(ctx context.Context, req provider.CancelPickupRequest) (*provider.CancelPickupResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	soapReq := &CancelPickupRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		PickupID:     req.PickupID,
-		Reason:       req.Reason,
-	}
-
-	var resp CancelPickupResponse
-	if err := a.soapClient.Call(ctx, "CancelPickup", soapReq, &resp); err != nil {
-		a.logger.Error("failed to cancel pickup",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to cancel pickup: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	return &provider.CancelPickupResponse{
-		Success: true,
-	}, nil
+// CancelPickup is not supported by Yurtici API.
+func (a *Adapter) CancelPickup(_ context.Context, _ provider.CancelPickupRequest) (*provider.CancelPickupResponse, error) {
+	return nil, a.UnsupportedOperation("CancelPickup")
 }
 
-// CreateReturn creates a return shipment.
+// CreateReturn creates a return shipment using cancelShipment.
+// For in-transit shipments (operationStatus=IND), cancelShipment sends a return request.
 func (a *Adapter) CreateReturn(ctx context.Context, req provider.CreateReturnRequest) (*provider.CreateReturnResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-	originAddress := buildAddressString(req.Origin)
-	destAddress := buildAddressString(req.Destination)
-
-	soapReq := &CreateReturnRequest{
-		UserName:         creds.Username,
-		Password:         creds.Password,
-		CustomerCode:     creds.CustomerCode,
-		Language:         creds.Language,
-		OriginalCargoKey: req.OriginalTrackingNumber,
-		Shipment: ShipmentDetails{
-			ProductCode: MapProductCode(req.ServiceCode),
-			Reference:   req.Reference,
-			LabelFormat: MapLabelFormat(req.LabelFormat),
-			PaymentType: PaymentTypeSender,
-			CargoType:   CargoTypeParcel,
-			Sender: AddressDetails{
-				Name:       req.Origin.ContactName,
-				Phone:      formatPhone(req.Origin.Phone),
-				Address:    originAddress,
-				CityCode:   req.Origin.CityCode,
-				TownCode:   req.Origin.DistrictCode,
-				PostalCode: derefString(req.Origin.PostalCode),
-			},
-			Receiver: AddressDetails{
-				Name:       req.Destination.ContactName,
-				Phone:      formatPhone(req.Destination.Phone),
-				Address:    destAddress,
-				CityCode:   req.Destination.CityCode,
-				TownCode:   req.Destination.DistrictCode,
-				PostalCode: derefString(req.Destination.PostalCode),
-			},
-			Cargo: CargoDetails{
-				PieceCount:  1,
-				Weight:      float64(req.Parcel.WeightGrams) / 1000.0,
-				Desi:        desi,
-				Length:      float64(req.Parcel.LengthCm),
-				Width:       float64(req.Parcel.WidthCm),
-				Height:      float64(req.Parcel.HeightCm),
-				Description: derefString(req.Parcel.Description),
-			},
-		},
+	soapReq := &CancelShipmentRequest{
+		XMLNSSer:     soapNamespace,
+		WsUserName:   creds.Username,
+		WsPassword:   creds.Password,
+		UserLanguage: creds.Language,
+		CargoKeys:    []string{req.OriginalTrackingNumber},
 	}
 
-	var resp CreateReturnResponse
-	if err := a.soapClient.Call(ctx, "CreateReturn", soapReq, &resp); err != nil {
+	var resp CancelShipmentResponse
+	if err := a.soapClient.Call(ctx, "cancelShipment", soapReq, &resp); err != nil {
 		a.logger.Error("failed to create return",
 			slog.String("provider", string(ProviderCode)),
 			slog.String("error", err.Error()),
@@ -741,103 +617,43 @@ func (a *Adapter) CreateReturn(ctx context.Context, req provider.CreateReturnReq
 		return nil, fmt.Errorf("failed to create return: %w", err)
 	}
 
-	if !resp.Result.Success {
+	if resp.Result.OutFlag == "2" {
 		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
+			Code:            "PROVIDER_ERROR",
+			Message:         resp.Result.OutResult,
+			ProviderCode:    "936",
+			ProviderMessage: resp.Result.OutResult,
+			Retryable:       true,
 		}
 	}
 
-	result := &provider.CreateReturnResponse{
-		ProviderShipmentID: resp.Result.ShipmentID,
-		TrackingNumber:     resp.Result.TrackingNumber,
-		Barcode:            resp.Result.Barcode,
-	}
+	if len(resp.Result.ShippingCancelDetailVO) > 0 {
+		detail := resp.Result.ShippingCancelDetailVO[0]
 
-	if resp.Result.LabelData != "" {
-		labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-		if err == nil {
-			result.Label = &provider.LabelData{
-				Format:      MapLabelFormatFromYurtici(resp.Result.LabelFormat),
-				Content:     labelBytes,
-				ContentType: MapContentType(resp.Result.LabelFormat),
+		if detail.ErrCode != "0" && detail.ErrCode != "" {
+			return nil, &provider.ProviderError{
+				Code:            MapErrorCode(detail.ErrCode),
+				Message:         MapErrorMessage(detail.ErrCode, detail.ErrMessage),
+				ProviderCode:    detail.ErrCode,
+				ProviderMessage: detail.ErrMessage,
+				Retryable:       IsRetryableError(detail.ErrCode),
 			}
 		}
+
+		return &provider.CreateReturnResponse{
+			ProviderShipmentID: detail.JobId,
+			TrackingNumber:     req.OriginalTrackingNumber,
+		}, nil
 	}
 
-	return result, nil
+	return &provider.CreateReturnResponse{
+		TrackingNumber: req.OriginalTrackingNumber,
+	}, nil
 }
 
-// GetDropoffPoints retrieves available dropoff points.
-func (a *Adapter) GetDropoffPoints(ctx context.Context, req provider.GetDropoffPointsRequest) (*provider.GetDropoffPointsResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	soapReq := &GetDropoffPointsRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Language:     creds.Language,
-		CityCode:     req.CityCode,
-		TownCode:     req.DistrictCode,
-		PostalCode:   req.PostalCode,
-		Limit:        req.Limit,
-	}
-
-	var resp GetDropoffPointsResponse
-	if err := a.soapClient.Call(ctx, "GetAgencies", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get dropoff points",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get dropoff points: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	points := make([]provider.DropoffPoint, 0, len(resp.Result.Agencies))
-	for _, p := range resp.Result.Agencies {
-		var lat, lng *float64
-		if p.Latitude != 0 {
-			lat = &p.Latitude
-		}
-		if p.Longitude != 0 {
-			lng = &p.Longitude
-		}
-
-		points = append(points, provider.DropoffPoint{
-			ID:           p.ID,
-			Name:         p.Name,
-			Address:      p.Address,
-			CityCode:     p.CityCode,
-			CityName:     p.CityName,
-			DistrictCode: p.TownCode,
-			DistrictName: p.TownName,
-			PostalCode:   p.PostalCode,
-			Latitude:     lat,
-			Longitude:    lng,
-			Phone:        p.Phone,
-			WorkingHours: p.WorkingHours,
-			IsActive:     p.IsActive,
-		})
-	}
-
-	return &provider.GetDropoffPointsResponse{
-		Points: points,
-	}, nil
+// GetDropoffPoints is not supported by Yurtici API.
+func (a *Adapter) GetDropoffPoints(_ context.Context, _ provider.GetDropoffPointsRequest) (*provider.GetDropoffPointsResponse, error) {
+	return nil, a.UnsupportedOperation("GetDropoffPoints")
 }
 
 // Helper functions
@@ -854,7 +670,7 @@ func buildAddressString(addr domain.AddressSnapshot) string {
 	return strings.Join(parts, " ")
 }
 
-// formatPhone formats a phone number for Yurtiçi (removes +90 prefix).
+// formatPhone formats a phone number for Yurtici (10 digits with area code).
 func formatPhone(phone string) string {
 	phone = strings.TrimSpace(phone)
 	phone = strings.ReplaceAll(phone, " ", "")
@@ -869,12 +685,54 @@ func formatPhone(phone string) string {
 	return phone
 }
 
-// derefString safely dereferences a string pointer.
-func derefString(s *string) string {
-	if s == nil {
-		return ""
+// parseYurticiDateTime parses Yurtici date (YYYYMMDD) and time (HHMMSS) to time.Time.
+func parseYurticiDateTime(date, timeStr string) time.Time {
+	if date == "" {
+		return time.Time{}
 	}
-	return *s
+
+	// Normalize: remove separators if present
+	date = strings.ReplaceAll(date, "-", "")
+	date = strings.ReplaceAll(date, "/", "")
+
+	if len(date) != 8 {
+		return time.Time{}
+	}
+
+	dateTimeStr := date
+	if timeStr != "" {
+		timeStr = strings.ReplaceAll(timeStr, ":", "")
+		if len(timeStr) >= 6 {
+			dateTimeStr = date + timeStr[:6]
+		}
+	}
+
+	loc, _ := time.LoadLocation("Europe/Istanbul")
+	if loc == nil {
+		loc = time.UTC
+	}
+
+	if len(dateTimeStr) == 14 {
+		t, err := time.ParseInLocation("20060102150405", dateTimeStr, loc)
+		if err == nil {
+			return t
+		}
+	}
+
+	t, err := time.ParseInLocation("20060102", date, loc)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// isProviderError checks if an error is a ProviderError and extracts it.
+func isProviderError(err error, target **provider.ProviderError) bool {
+	if pe, ok := err.(*provider.ProviderError); ok {
+		*target = pe
+		return true
+	}
+	return false
 }
 
 // init registers the adapter with the global factory.

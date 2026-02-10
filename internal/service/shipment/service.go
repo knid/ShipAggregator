@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/label"
 	"github.com/knid/kargonet/internal/observability"
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
@@ -376,6 +377,48 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		} else {
 			labelDocumentID = pgtype.UUID{Bytes: doc.ID, Valid: true}
 			labelDocument = doc
+		}
+	} else {
+		// Provider did not return a label - generate a convenience label
+		convenienceParams := label.ConvenienceLabelParams{
+			ProviderName:     string(providerCode),
+			TrackingNumber:   createResp.TrackingNumber,
+			SenderName:       originAddress.ContactName,
+			SenderAddress:    originAddress.StreetLine1,
+			SenderCity:       originAddress.City,
+			SenderDistrict:   originAddress.District,
+			SenderPhone:      originAddress.Phone,
+			ReceiverName:     destAddress.ContactName,
+			ReceiverAddress:  destAddress.StreetLine1,
+			ReceiverCity:     destAddress.City,
+			ReceiverDistrict: destAddress.District,
+			ReceiverPhone:    destAddress.Phone,
+			WeightGrams:      parcel.WeightGrams,
+			DesiValue:        parcel.Desi(),
+			CreatedAt:        time.Now(),
+		}
+		pdfBytes, genErr := label.GenerateConvenienceLabel(convenienceParams)
+		if genErr != nil {
+			s.logger.Error("Failed to generate convenience label", "error", genErr)
+		} else {
+			doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
+				OrganizationID: req.OrganizationID,
+				Type:           domain.DocumentTypeLabel.String(),
+				Format:         "pdf",
+				Filename:       fmt.Sprintf("convenience_label_%s.pdf", createResp.TrackingNumber),
+				StoragePath:    fmt.Sprintf("labels/%s/%s", req.OrganizationID, shipment.ID),
+				StorageBucket:  "documents",
+				ContentType:    "application/pdf",
+				SizeBytes:      int32(len(pdfBytes)),
+				ContentHash:    "",
+				Metadata:       []byte("{}"),
+			})
+			if err != nil {
+				s.logger.Error("Failed to create convenience label document", "error", err)
+			} else {
+				labelDocumentID = pgtype.UUID{Bytes: doc.ID, Valid: true}
+				labelDocument = doc
+			}
 		}
 	}
 
@@ -970,6 +1013,48 @@ func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelReq
 		} else {
 			labelDocumentID = pgtype.UUID{Bytes: doc.ID, Valid: true}
 			labelDocument = doc
+		}
+	} else {
+		// Provider did not return a label - generate a convenience label
+		convenienceParams := label.ConvenienceLabelParams{
+			ProviderName:     returnShipment.ProviderCode,
+			TrackingNumber:   createResp.TrackingNumber,
+			SenderName:       originAddress.ContactName,
+			SenderAddress:    originAddress.StreetLine1,
+			SenderCity:       originAddress.City,
+			SenderDistrict:   originAddress.District,
+			SenderPhone:      originAddress.Phone,
+			ReceiverName:     destAddress.ContactName,
+			ReceiverAddress:  destAddress.StreetLine1,
+			ReceiverCity:     destAddress.City,
+			ReceiverDistrict: destAddress.District,
+			ReceiverPhone:    destAddress.Phone,
+			WeightGrams:      parcel.WeightGrams,
+			DesiValue:        parcel.Desi(),
+			CreatedAt:        time.Now(),
+		}
+		pdfBytes, genErr := label.GenerateConvenienceLabel(convenienceParams)
+		if genErr != nil {
+			s.logger.Error("Failed to generate convenience return label", "error", genErr)
+		} else {
+			doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
+				OrganizationID: req.OrganizationID,
+				Type:           domain.DocumentTypeLabel.String(),
+				Format:         "pdf",
+				Filename:       fmt.Sprintf("convenience_label_%s.pdf", createResp.TrackingNumber),
+				StoragePath:    fmt.Sprintf("labels/%s/%s", req.OrganizationID, returnShipment.ID),
+				StorageBucket:  "documents",
+				ContentType:    "application/pdf",
+				SizeBytes:      int32(len(pdfBytes)),
+				ContentHash:    "",
+				Metadata:       []byte("{}"),
+			})
+			if err != nil {
+				s.logger.Error("Failed to create convenience return label document", "error", err)
+			} else {
+				labelDocumentID = pgtype.UUID{Bytes: doc.ID, Valid: true}
+				labelDocument = doc
+			}
 		}
 	}
 

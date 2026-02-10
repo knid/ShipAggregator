@@ -3,8 +3,10 @@ module github.com/knid/kargonet
 go 1.25.1
 
 require (
+	github.com/boombuler/barcode v1.1.0
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-chi/cors v1.2.2
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.1
 	github.com/jackc/pgx/v5 v5.8.0
