@@ -235,7 +235,6 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	// Initialize carrier tracking webhook handlers (US5: Tracking Updates)
 	var arasWebhookHandler *integration.ArasWebhookHandler
 	var yurticiWebhookHandler *integration.YurticiWebhookHandler
-	var hepsijetWebhookHandler *integration.HepsijetWebhookHandler
 	if cfg.TrackingService != nil && cfg.WebhookPublisher != nil {
 		arasWebhookHandler = integration.NewArasWebhookHandler(
 			cfg.DBPool,
@@ -245,13 +244,6 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			cfg.Logger,
 		)
 		yurticiWebhookHandler = integration.NewYurticiWebhookHandler(
-			cfg.DBPool,
-			cfg.Queries,
-			cfg.TrackingService,
-			cfg.WebhookPublisher,
-			cfg.Logger,
-		)
-		hepsijetWebhookHandler = integration.NewHepsijetWebhookHandler(
 			cfg.DBPool,
 			cfg.Queries,
 			cfg.TrackingService,
@@ -631,9 +623,6 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			if yurticiWebhookHandler != nil {
 				r.Post("/yurtici", yurticiWebhookHandler.HandleWebhook)
 			}
-			if hepsijetWebhookHandler != nil {
-				r.Post("/hepsijet", hepsijetWebhookHandler.HandleWebhook)
-			}
 		})
 	})
 
@@ -656,9 +645,6 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 			if yurticiWebhookHandler != nil {
 				r.Post("/yurtici", yurticiWebhookHandler.HandleWebhook)
-			}
-			if hepsijetWebhookHandler != nil {
-				r.Post("/hepsijet", hepsijetWebhookHandler.HandleWebhook)
 			}
 		})
 

@@ -187,31 +187,17 @@ type ProviderConfig struct {
 
 // ProvidersConfig holds all provider configurations.
 type ProvidersConfig struct {
-	Aras        ProviderConfig
-	Yurtici     ProviderConfig
-	Surat       ProviderConfig
-	PTT         ProviderConfig
-	Hepsijet    ProviderConfig
-	MNG         ProviderConfig
-	Kolaygelsin ProviderConfig
-	Sendeo      ProviderConfig
-	Pakettaxi   ProviderConfig
+	Aras    ProviderConfig
+	Yurtici ProviderConfig
 }
 
 // FeaturesConfig holds feature flag configuration.
 type FeaturesConfig struct {
-	ArasEnabled        bool
-	YurticiEnabled     bool
-	SuratEnabled       bool
-	PTTEnabled         bool
-	HepsijetEnabled    bool
-	MNGEnabled         bool
-	KolaygelsinEnabled bool
-	SendeoEnabled      bool
-	PakettaxiEnabled   bool
-	CODEnabled         bool
-	BYOAEnabled        bool
-	WebhooksEnabled    bool
+	ArasEnabled     bool
+	YurticiEnabled  bool
+	CODEnabled      bool
+	BYOAEnabled     bool
+	WebhooksEnabled bool
 }
 
 // CORSConfig holds CORS configuration.
@@ -349,54 +335,10 @@ func Load() (*Config, error) {
 		Password:     os.Getenv("YURTICI_PASSWORD"),
 		UserLanguage: getEnvOrDefault("YURTICI_USER_LANGUAGE", "TR"),
 	}
-	cfg.Providers.Surat = ProviderConfig{
-		WSDLURL:  os.Getenv("SURAT_WSDL_URL"),
-		Username: os.Getenv("SURAT_USERNAME"),
-		Password: os.Getenv("SURAT_PASSWORD"),
-	}
-	cfg.Providers.PTT = ProviderConfig{
-		WSDLURL:    os.Getenv("PTT_WSDL_URL"),
-		Username:   os.Getenv("PTT_USERNAME"),
-		Password:   os.Getenv("PTT_PASSWORD"),
-		CustomerID: os.Getenv("PTT_CUSTOMER_ID"),
-	}
-	cfg.Providers.Hepsijet = ProviderConfig{
-		BaseURL:   os.Getenv("HEPSIJET_BASE_URL"),
-		APIKey:    os.Getenv("HEPSIJET_API_KEY"),
-		SecretKey: os.Getenv("HEPSIJET_SECRET_KEY"),
-	}
-	cfg.Providers.MNG = ProviderConfig{
-		WSDLURL:        os.Getenv("MNG_WSDL_URL"),
-		Username:       os.Getenv("MNG_USERNAME"),
-		Password:       os.Getenv("MNG_PASSWORD"),
-		CustomerNumber: os.Getenv("MNG_CUSTOMER_NUMBER"),
-	}
-	cfg.Providers.Kolaygelsin = ProviderConfig{
-		BaseURL:   os.Getenv("KOLAYGELSIN_BASE_URL"),
-		APIKey:    os.Getenv("KOLAYGELSIN_API_KEY"),
-		SecretKey: os.Getenv("KOLAYGELSIN_SECRET_KEY"),
-	}
-	cfg.Providers.Sendeo = ProviderConfig{
-		BaseURL:    os.Getenv("SENDEO_BASE_URL"),
-		APIKey:     os.Getenv("SENDEO_API_KEY"),
-		CustomerID: os.Getenv("SENDEO_CUSTOMER_ID"),
-	}
-	cfg.Providers.Pakettaxi = ProviderConfig{
-		BaseURL:   os.Getenv("PAKETTAXI_BASE_URL"),
-		APIKey:    os.Getenv("PAKETTAXI_API_KEY"),
-		SecretKey: os.Getenv("PAKETTAXI_SECRET_KEY"),
-	}
 
 	// Feature flags
 	cfg.Features.ArasEnabled = getEnvBool("FEATURE_ARAS_ENABLED", true)
 	cfg.Features.YurticiEnabled = getEnvBool("FEATURE_YURTICI_ENABLED", true)
-	cfg.Features.SuratEnabled = getEnvBool("FEATURE_SURAT_ENABLED", true)
-	cfg.Features.PTTEnabled = getEnvBool("FEATURE_PTT_ENABLED", true)
-	cfg.Features.HepsijetEnabled = getEnvBool("FEATURE_HEPSIJET_ENABLED", true)
-	cfg.Features.MNGEnabled = getEnvBool("FEATURE_MNG_ENABLED", true)
-	cfg.Features.KolaygelsinEnabled = getEnvBool("FEATURE_KOLAYGELSIN_ENABLED", true)
-	cfg.Features.SendeoEnabled = getEnvBool("FEATURE_SENDEO_ENABLED", true)
-	cfg.Features.PakettaxiEnabled = getEnvBool("FEATURE_PAKETTAXI_ENABLED", true)
 	cfg.Features.CODEnabled = getEnvBool("FEATURE_COD_ENABLED", true)
 	cfg.Features.BYOAEnabled = getEnvBool("FEATURE_BYOA_ENABLED", true)
 	cfg.Features.WebhooksEnabled = getEnvBool("FEATURE_WEBHOOKS_ENABLED", true)

@@ -428,35 +428,6 @@ func GetCredentialSchema(providerCode domain.ProviderCode) []CredentialField {
 			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Username"},
 			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Password"},
 		},
-		domain.ProviderCodeHepsijet: {
-			{Name: "api_key", Type: "string", Required: true, Sensitive: true, Label: "API Key"},
-			{Name: "customer_code", Type: "string", Required: true, Sensitive: false, Label: "Merchant ID"},
-		},
-		domain.ProviderCodeMNG: {
-			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Username"},
-			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Password"},
-			{Name: "customer_code", Type: "string", Required: true, Sensitive: false, Label: "Customer Number"},
-		},
-		domain.ProviderCodeSurat: {
-			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Username"},
-			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Password"},
-		},
-		domain.ProviderCodePTT: {
-			{Name: "username", Type: "string", Required: true, Sensitive: false, Label: "Username"},
-			{Name: "password", Type: "string", Required: true, Sensitive: true, Label: "Password"},
-			{Name: "customer_code", Type: "string", Required: true, Sensitive: false, Label: "Sender Code"},
-		},
-		domain.ProviderCodeSendeo: {
-			{Name: "api_key", Type: "string", Required: true, Sensitive: true, Label: "API Key"},
-			{Name: "customer_code", Type: "string", Required: true, Sensitive: false, Label: "Customer Code"},
-		},
-		domain.ProviderCodeKolaygelsin: {
-			{Name: "api_key", Type: "string", Required: true, Sensitive: true, Label: "API Key"},
-		},
-		domain.ProviderCodePakettaxi: {
-			{Name: "api_key", Type: "string", Required: true, Sensitive: true, Label: "API Key"},
-			{Name: "api_secret", Type: "string", Required: true, Sensitive: true, Label: "Secret Key"},
-		},
 	}
 
 	if schema, ok := schemas[providerCode]; ok {

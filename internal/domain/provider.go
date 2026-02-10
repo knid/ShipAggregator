@@ -40,28 +40,12 @@ const (
 	ProviderCodeAras ProviderCode = "aras"
 	// ProviderCodeYurtici is the code for Yurtiçi Kargo.
 	ProviderCodeYurtici ProviderCode = "yurtici"
-	// ProviderCodeSurat is the code for Sürat Kargo.
-	ProviderCodeSurat ProviderCode = "surat"
-	// ProviderCodePTT is the code for PTT Kargo.
-	ProviderCodePTT ProviderCode = "ptt"
-	// ProviderCodeHepsijet is the code for Hepsijet.
-	ProviderCodeHepsijet ProviderCode = "hepsijet"
-	// ProviderCodeMNG is the code for MNG Kargo.
-	ProviderCodeMNG ProviderCode = "mng"
-	// ProviderCodeKolaygelsin is the code for Kolaygelsin.
-	ProviderCodeKolaygelsin ProviderCode = "kolaygelsin"
-	// ProviderCodeSendeo is the code for Sendeo.
-	ProviderCodeSendeo ProviderCode = "sendeo"
-	// ProviderCodePakettaxi is the code for Pakettaxi.
-	ProviderCodePakettaxi ProviderCode = "pakettaxi"
 )
 
 // IsValid checks if the provider code is valid.
 func (c ProviderCode) IsValid() bool {
 	switch c {
-	case ProviderCodeAras, ProviderCodeYurtici, ProviderCodeSurat, ProviderCodePTT,
-		ProviderCodeHepsijet, ProviderCodeMNG, ProviderCodeKolaygelsin,
-		ProviderCodeSendeo, ProviderCodePakettaxi:
+	case ProviderCodeAras, ProviderCodeYurtici:
 		return true
 	default:
 		return false
@@ -76,9 +60,7 @@ func (c ProviderCode) String() string {
 // AllProviderCodes returns all valid provider codes.
 func AllProviderCodes() []ProviderCode {
 	return []ProviderCode{
-		ProviderCodeAras, ProviderCodeYurtici, ProviderCodeSurat, ProviderCodePTT,
-		ProviderCodeHepsijet, ProviderCodeMNG, ProviderCodeKolaygelsin,
-		ProviderCodeSendeo, ProviderCodePakettaxi,
+		ProviderCodeAras, ProviderCodeYurtici,
 	}
 }
 
