@@ -54,12 +54,12 @@ run-worker:
 ## migrate-up: Run database migrations up
 migrate-up:
 	@echo "$(GREEN)Running migrations up...$(NC)"
-	$(GO) run ./cmd/migrate/main.go -direction up
+	$(GO) run ./cmd/migrate/main.go -command up
 
 ## migrate-down: Rollback database migrations
 migrate-down:
 	@echo "$(YELLOW)Rolling back migrations...$(NC)"
-	$(GO) run ./cmd/migrate/main.go -direction down
+	$(GO) run ./cmd/migrate/main.go -command down
 
 ## migrate-create: Create a new migration (usage: make migrate-create name=migration_name)
 migrate-create:

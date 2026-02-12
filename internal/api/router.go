@@ -70,6 +70,8 @@ type RouterConfig struct {
 	CODService *billing.CODService
 	// TopupService is the topup service (US4: Wallet Top-Up).
 	TopupService *billing.TopupService
+	// RefundService is the refund service (US7: Shipment Cancellation & Refund).
+	RefundService *billing.RefundService
 	// IyzicoClient is the Iyzico payment client (US4: Wallet Top-Up).
 	IyzicoClient *iyzico.Client
 	// IyzicoReturnURL is the return URL for Iyzico callbacks (US4: Wallet Top-Up).
@@ -167,7 +169,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 	// Health check endpoints (no auth required)
 	healthHandler := handler.NewHealthHandler(cfg.DBPool, cfg.RedisCache, cfg.Logger)
 	r.Get("/health/live", healthHandler.Live)
-	// r.Get("/health/ready", healthHandler.Ready)
+	r.Get("/health/ready", healthHandler.Ready)
 
 	// Initialize handlers
 	var quoteHandler *handler.QuoteHandler
@@ -197,7 +199,16 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		)
 	}
 	if cfg.WalletService != nil && cfg.LedgerService != nil {
-		if cfg.TopupService != nil {
+		if cfg.TopupService != nil && cfg.RefundService != nil {
+			billingHandler = handler.NewBillingHandlerComplete(
+				cfg.WalletService,
+				cfg.LedgerService,
+				cfg.CODService,
+				cfg.TopupService,
+				cfg.RefundService,
+				cfg.Logger,
+			)
+		} else if cfg.TopupService != nil {
 			billingHandler = handler.NewBillingHandlerFull(
 				cfg.WalletService,
 				cfg.LedgerService,
@@ -423,14 +434,30 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
-		// Webhooks routes
+		// Webhooks routes (US5: Webhook Management)
 		r.Route("/webhooks", func(r chi.Router) {
 			r.Use(middleware.RequireScope("webhooks:read"))
-			// r.Get("/", webhooksHandler.List)
-			// r.Post("/", webhooksHandler.Create)
-			// r.Get("/{webhookID}", webhooksHandler.Get)
-			// r.Put("/{webhookID}", webhooksHandler.Update)
-			// r.Delete("/{webhookID}", webhooksHandler.Delete)
+			if cfg.WebhookPublisher != nil && cfg.WebhookDeliveryService != nil {
+				webhookHandler := handler.NewWebhookHandler(cfg.WebhookPublisher, cfg.WebhookDeliveryService, cfg.Queries, cfg.Logger)
+				// Endpoints
+				r.Get("/endpoints", webhookHandler.ListEndpoints)
+				r.With(middleware.RequireScope("webhooks:create")).Post("/endpoints", webhookHandler.CreateEndpoint)
+				r.Get("/endpoints/{id}", webhookHandler.GetEndpoint)
+				r.With(middleware.RequireScope("webhooks:update")).Patch("/endpoints/{id}", webhookHandler.UpdateEndpoint)
+				r.With(middleware.RequireScope("webhooks:delete")).Delete("/endpoints/{id}", webhookHandler.DeleteEndpoint)
+				r.With(middleware.RequireScope("webhooks:update")).Post("/endpoints/{id}/test", webhookHandler.TestEndpoint)
+				r.With(middleware.RequireScope("webhooks:update")).Post("/endpoints/{id}/rotate-secret", webhookHandler.RotateEndpointSecret)
+				// Subscriptions
+				r.Get("/endpoints/{id}/subscriptions", webhookHandler.ListSubscriptions)
+				r.With(middleware.RequireScope("webhooks:create")).Post("/endpoints/{id}/subscriptions", webhookHandler.CreateSubscription)
+				r.With(middleware.RequireScope("webhooks:update")).Patch("/subscriptions/{id}", webhookHandler.UpdateSubscription)
+				r.With(middleware.RequireScope("webhooks:delete")).Delete("/subscriptions/{id}", webhookHandler.DeleteSubscription)
+				// Deliveries
+				r.Get("/endpoints/{id}/deliveries", webhookHandler.ListDeliveries)
+				r.With(middleware.RequireScope("webhooks:update")).Post("/endpoints/{id}/deliveries/{deliveryId}/retry", webhookHandler.ReplayDelivery)
+				// Event types reference
+				r.Get("/event-types", webhookHandler.ListEventTypes)
+			}
 		})
 
 		// Organization routes - /orgs/current for current organization context
@@ -501,6 +528,13 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					r.Get("/{id}", billingHandler.GetRefund)
 				})
 			}
+		})
+
+		// Stats routes (dashboard statistics)
+		r.Route("/stats", func(r chi.Router) {
+			statsHandler := handler.NewStatsHandler(cfg.DBPool, cfg.Queries, cfg.Logger)
+			r.Get("/shipments", statsHandler.GetShipmentStats)
+			r.Get("/billing", statsHandler.GetBillingStats)
 		})
 
 		// Providers routes (reference data)

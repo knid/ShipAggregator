@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -39,6 +40,8 @@ type Config struct {
 	UseSandbox bool
 	// Logger is the logger instance.
 	Logger *slog.Logger
+	// OnAPIRequest is called after each SOAP request for logging.
+	OnAPIRequest func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, err error)
 }
 
 // DefaultConfig returns the default configuration.
@@ -77,6 +80,14 @@ func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 		Logger:      logger,
 	}
 
+	// Wire provider API logging callback
+	if config.OnAPIRequest != nil {
+		onReq := config.OnAPIRequest
+		soapConfig.OnRequest = func(ctx context.Context, log soap.RequestLog) {
+			onReq(ctx, string(ProviderCode), log.Action, log.Endpoint, log.RequestBody, log.ResponseBody, log.ResponseStatus, log.LatencyMs, log.Success, log.Error)
+		}
+	}
+
 	return &Adapter{
 		BaseAdapter: provider.NewBaseAdapter(ProviderCode, domain.ProviderAPITypeSOAP),
 		config:      config,
@@ -93,6 +104,7 @@ func NewAdapterFromProviderConfig(cfg provider.AdapterConfig, logger *slog.Logge
 		Timeout:         cfg.Timeout,
 		UseSandbox:      cfg.UseSandbox,
 		Logger:          logger,
+		OnAPIRequest:   cfg.OnAPIRequest,
 	}
 
 	if config.Endpoint == "" {
@@ -205,9 +217,72 @@ func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCr
 	}, nil
 }
 
-// GetQuote is not supported by Yurtici API (no pricing endpoint).
-func (a *Adapter) GetQuote(_ context.Context, _ provider.QuoteRequest) (*provider.QuoteResponse, error) {
-	return nil, a.UnsupportedOperation("GetQuote")
+// ---------------------------------------------------------------------------
+// GetQuote — static contract pricing (KDV hariç / VAT excluded).
+// Yurtiçi has no pricing API; prices come from the fixed contract agreement.
+// Single zone: 0-9999 KM.
+// ---------------------------------------------------------------------------
+
+// yurticiContractPrice returns the Yurtiçi contract price in kuruş (KDV hariç) for a given desi.
+func yurticiContractPrice(desi int) int64 {
+	if desi <= 0 {
+		return 11925
+	}
+	switch {
+	case desi <= 1:
+		return 12750
+	case desi <= 2:
+		return 13480
+	case desi <= 3:
+		return 14145
+	case desi <= 4:
+		return 15060
+	case desi <= 5:
+		return 16260
+	case desi <= 10:
+		return 19455
+	case desi <= 15:
+		return 26940
+	case desi <= 20:
+		return 35910
+	case desi <= 25:
+		return 44890
+	case desi <= 30:
+		return 53865
+	default:
+		extra := desi - 30
+		return 53865 + int64(extra)*1796
+	}
+}
+
+func (a *Adapter) GetQuote(_ context.Context, req provider.QuoteRequest) (*provider.QuoteResponse, error) {
+	// Calculate desi: max(volumetric, weight_kg), rounded up
+	volumetric := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
+	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
+	desi := volumetric
+	if weightKg > desi {
+		desi = weightKg
+	}
+	desiInt := int(math.Ceil(desi))
+
+	basePriceKurus := yurticiContractPrice(desiInt)
+	vatKurus := basePriceKurus * 20 / 100
+	totalKurus := basePriceKurus + vatKurus
+
+	return &provider.QuoteResponse{
+		Offers: []provider.ProviderOffer{
+			{
+				ServiceCode:      "standard",
+				ServiceName:      "Standart Kargo",
+				BasePriceKurus:   basePriceKurus,
+				VATKurus:         vatKurus,
+				TotalPriceKurus:  totalKurus,
+				EstimatedDaysMin: 2,
+				EstimatedDaysMax: 4,
+				ExpiresAt:        time.Now().Add(1 * time.Hour),
+			},
+		},
+	}, nil
 }
 
 // CreateShipment creates a new shipment with Yurtici.

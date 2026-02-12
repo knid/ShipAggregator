@@ -29,6 +29,7 @@ type Service struct {
 	queries        *db.Queries
 	adapterPool    *provider.AdapterPool
 	accountService *providerservice.AccountService
+	platformCreds  map[domain.ProviderCode]*domain.ProviderCredentials
 	logger         *observability.Logger
 }
 
@@ -51,6 +52,40 @@ func NewServiceWithBYOA(
 		queries:        queries,
 		adapterPool:    adapterPool,
 		accountService: accountService,
+		logger:         logger,
+	}
+}
+
+// NewServiceWithPlatformCreds creates a new quote service with platform-level
+// provider credentials for live marketplace pricing.
+func NewServiceWithPlatformCreds(
+	queries *db.Queries,
+	adapterPool *provider.AdapterPool,
+	platformCreds map[domain.ProviderCode]*domain.ProviderCredentials,
+	logger *observability.Logger,
+) *Service {
+	return &Service{
+		queries:       queries,
+		adapterPool:   adapterPool,
+		platformCreds: platformCreds,
+		logger:        logger,
+	}
+}
+
+// NewServiceWithPlatformCredsAndBYOA creates a quote service with both platform
+// credentials (for marketplace offers) and BYOA support.
+func NewServiceWithPlatformCredsAndBYOA(
+	queries *db.Queries,
+	adapterPool *provider.AdapterPool,
+	accountService *providerservice.AccountService,
+	platformCreds map[domain.ProviderCode]*domain.ProviderCredentials,
+	logger *observability.Logger,
+) *Service {
+	return &Service{
+		queries:        queries,
+		adapterPool:    adapterPool,
+		accountService: accountService,
+		platformCreds:  platformCreds,
 		logger:         logger,
 	}
 }
@@ -342,63 +377,128 @@ func (s *Service) generateBYOAOffers(ctx context.Context, quote *db.Quote, req *
 	return offers, nil
 }
 
-// generateMarketplaceOffers generates offers using marketplace pricing.
+// MarketplaceMarginPercent is the margin applied on top of provider prices for marketplace offers.
+const MarketplaceMarginPercent = 15.0
+
+// generateMarketplaceOffers generates offers by calling provider APIs with
+// platform credentials and applying a margin on top of the real prices.
 func (s *Service) generateMarketplaceOffers(ctx context.Context, quote *db.Quote, req *CreateQuoteRequest) ([]*db.Offer, error) {
+	if s.adapterPool == nil || len(s.platformCreds) == 0 {
+		s.logger.Debug("skipping marketplace offers: no platform credentials configured")
+		return nil, nil
+	}
+
+	// Build address snapshots for provider API calls
+	originSnapshot := addressToSnapshot(req.OriginAddress)
+	destSnapshot := addressToSnapshot(req.DestinationAddress)
+
+	var codAmountKurus *int64
+	if req.CODAmountKurus != nil {
+		cod := int64(*req.CODAmountKurus)
+		codAmountKurus = &cod
+	}
+
+	var declaredValueKurus *int64
+	if req.DeclaredValueKurus != nil {
+		dv := int64(*req.DeclaredValueKurus)
+		declaredValueKurus = &dv
+	}
+
 	var offers []*db.Offer
 
-	// Get all active providers
-	providers, err := s.queries.ListActiveProviders(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get marketplace rate plans
-	ratePlans, err := s.queries.ListCurrentMarketplaceRatePlans(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build rate plan lookup
-	ratePlanMap := make(map[string]*db.MarketplaceRatePlan)
-	for _, rp := range ratePlans {
-		key := rp.ProviderCode + ":" + rp.ServiceCode
-		ratePlanMap[key] = rp
-	}
-
-	// Generate offers for each provider
-	for _, dbProvider := range providers {
-		// Get provider services
-		services, err := s.queries.ListActiveProviderServices(ctx, dbProvider.Code)
+	for providerCode, creds := range s.platformCreds {
+		adapter, err := s.adapterPool.Get(providerCode)
 		if err != nil {
-			s.logger.Error("Failed to get provider services", "error", err, "provider", dbProvider.Code)
+			s.logger.Error("failed to get adapter for marketplace quote",
+				"error", err,
+				"provider_code", providerCode,
+			)
 			continue
 		}
 
-		// Generate offer for each service
-		for _, service := range services {
-			// Check if service supports COD if COD is requested
-			if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 && !service.SupportsCod {
+		quoteResp, err := adapter.GetQuote(ctx, provider.QuoteRequest{
+			Origin:             originSnapshot,
+			Destination:        destSnapshot,
+			Parcel:             *req.Parcel,
+			CODAmountKurus:     codAmountKurus,
+			DeclaredValueKurus: declaredValueKurus,
+			Credentials:        creds,
+		})
+		if err != nil {
+			// Skip providers that don't support GetQuote (e.g. Yurtici)
+			var provErr *provider.ProviderError
+			if errors.As(err, &provErr) && provErr.Code == "UNSUPPORTED_OPERATION" {
+				s.logger.Debug("provider does not support GetQuote, skipping",
+					"provider_code", providerCode,
+				)
 				continue
 			}
+			s.logger.Error("failed to get marketplace quote from provider",
+				"error", err,
+				"provider_code", providerCode,
+			)
+			continue
+		}
 
-			// Get rate plan
-			key := dbProvider.Code + ":" + service.ServiceCode
-			ratePlan, ok := ratePlanMap[key]
-			if !ok {
-				continue
+		// Log provider-side errors (e.g. Aras returned Success=false)
+		for _, provErr := range quoteResp.Errors {
+			s.logger.Warn("provider returned error in quote response",
+				"provider_code", providerCode,
+				"error_code", provErr.Code,
+				"error_message", provErr.Message,
+				"provider_error_code", provErr.ProviderCode,
+				"provider_error_message", provErr.ProviderMessage,
+			)
+		}
+
+		for _, providerOffer := range quoteResp.Offers {
+			expiresAt := providerOffer.ExpiresAt
+			if expiresAt.IsZero() {
+				expiresAt = time.Now().Add(QuoteExpiry)
 			}
 
-			// Calculate pricing
-			offer, err := s.calculateOffer(ctx, quote.ID, dbProvider, service, ratePlan, req)
+			// The cost price is what the provider charges us
+			costSubtotal := providerOffer.BasePriceKurus + providerOffer.FuelSurchargeKurus + providerOffer.CODFeeKurus + providerOffer.InsuranceFeeKurus
+			costTotal := providerOffer.TotalPriceKurus // includes VAT from provider
+
+			// Apply margin on the subtotal (pre-VAT), then recalculate VAT
+			marginKurus := int64(float64(costSubtotal) * MarketplaceMarginPercent / 100.0)
+			sellSubtotal := costSubtotal + marginKurus
+			sellVATKurus := int64(float64(sellSubtotal) * VATPercent / 100.0)
+			sellTotal := sellSubtotal + sellVATKurus
+
+			costTotalI32 := int32(costTotal)
+			marginI32 := int32(marginKurus)
+
+			offerParams := db.CreateOfferParams{
+				QuoteID:            quote.ID,
+				ProviderCode:       string(providerCode),
+				ServiceCode:        providerOffer.ServiceCode,
+				ProviderAccountID:  pgtype.UUID{}, // NULL for marketplace
+				IsMarketplace:      true,
+				BasePriceKurus:     int32(providerOffer.BasePriceKurus),
+				FuelSurchargeKurus: int32(providerOffer.FuelSurchargeKurus),
+				CodFeeKurus:        int32(providerOffer.CODFeeKurus),
+				InsuranceFeeKurus:  int32(providerOffer.InsuranceFeeKurus),
+				OtherFeesKurus:     int32(marginKurus), // margin stored as "other fees" on the sell side
+				SubtotalKurus:      int32(sellSubtotal),
+				VatKurus:           int32(sellVATKurus),
+				TotalPriceKurus:    int32(sellTotal),
+				CostPriceKurus:     &costTotalI32,
+				MarginKurus:        &marginI32,
+				EstimatedDaysMin:   int32(providerOffer.EstimatedDaysMin),
+				EstimatedDaysMax:   int32(providerOffer.EstimatedDaysMax),
+				ProviderQuoteID:    &providerOffer.ProviderQuoteID,
+				ExpiresAt:          pgtype.Timestamptz{Time: expiresAt, Valid: true},
+			}
+
+			createdOffer, err := s.queries.CreateOffer(ctx, offerParams)
 			if err != nil {
-				s.logger.Error("Failed to calculate offer", "error", err, "provider", dbProvider.Code, "service", service.ServiceCode)
-				continue
-			}
-
-			// Create offer
-			createdOffer, err := s.queries.CreateOffer(ctx, *offer)
-			if err != nil {
-				s.logger.Error("Failed to create offer", "error", err, "provider", dbProvider.Code, "service", service.ServiceCode)
+				s.logger.Error("failed to create marketplace offer",
+					"error", err,
+					"provider_code", providerCode,
+					"service_code", providerOffer.ServiceCode,
+				)
 				continue
 			}
 
@@ -409,100 +509,23 @@ func (s *Service) generateMarketplaceOffers(ctx context.Context, quote *db.Quote
 	return offers, nil
 }
 
-// calculateOffer calculates pricing for a specific provider service.
-func (s *Service) calculateOffer(
-	ctx context.Context,
-	quoteID uuid.UUID,
-	provider *db.Provider,
-	service *db.ProviderService,
-	ratePlan *db.MarketplaceRatePlan,
-	req *CreateQuoteRequest,
-) (*db.CreateOfferParams, error) {
-	// Calculate weight-based pricing
-	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
-
-	// Calculate volumetric weight (desi)
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-
-	// Use the greater of actual weight and volumetric weight
-	chargeableWeight := weightKg
-	if desi > weightKg {
-		chargeableWeight = desi
+// addressToSnapshot converts a domain.Address to a domain.AddressSnapshot.
+func addressToSnapshot(addr *domain.Address) domain.AddressSnapshot {
+	return domain.AddressSnapshot{
+		ContactName:      addr.ContactName,
+		CompanyName:      addr.CompanyName,
+		Phone:            addr.Phone,
+		Email:            addr.Email,
+		StreetLine1:      addr.StreetLine1,
+		StreetLine2:      addr.StreetLine2,
+		Neighborhood:     addr.NeighborhoodCode,
+		NeighborhoodCode: addr.NeighborhoodCode,
+		District:         addr.DistrictCode,
+		DistrictCode:     addr.DistrictCode,
+		City:             addr.CityCode,
+		CityCode:         addr.CityCode,
+		PostalCode:       addr.PostalCode,
 	}
-
-	// Base price
-	basePriceKurus := ratePlan.BasePriceKurus
-
-	// Weight surcharge
-	weightSurchargeKurus := int32(chargeableWeight * float64(ratePlan.PricePerKgKurus))
-
-	// Desi surcharge
-	desiSurchargeKurus := int32(desi * float64(ratePlan.PricePerDesiKurus))
-
-	// Use the greater of weight and desi surcharge
-	surchargeKurus := weightSurchargeKurus
-	if desiSurchargeKurus > weightSurchargeKurus {
-		surchargeKurus = desiSurchargeKurus
-	}
-
-	// Fuel surcharge
-	fuelSurchargePercent := numericToFloat64(ratePlan.FuelSurchargePercent)
-	fuelSurchargeKurus := int32(float64(basePriceKurus+surchargeKurus) * fuelSurchargePercent / 100.0)
-
-	// COD fee
-	var codFeeKurus int32
-	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 {
-		codFeePercent := numericToFloat64(ratePlan.CodFeePercent)
-		codFeeKurus = int32(float64(*req.CODAmountKurus) * codFeePercent / 100.0)
-		if codFeeKurus < ratePlan.CodFeeMinKurus {
-			codFeeKurus = ratePlan.CodFeeMinKurus
-		}
-	}
-
-	// Insurance fee (simplified - 1% of declared value)
-	var insuranceFeeKurus int32
-	if req.DeclaredValueKurus != nil && *req.DeclaredValueKurus > 0 {
-		insuranceFeeKurus = int32(float64(*req.DeclaredValueKurus) * 0.01)
-	}
-
-	// Subtotal
-	subtotalKurus := basePriceKurus + surchargeKurus + fuelSurchargeKurus + codFeeKurus + insuranceFeeKurus
-
-	// VAT
-	vatPercent := numericToFloat64(ratePlan.VatPercent)
-	vatKurus := int32(float64(subtotalKurus) * vatPercent / 100.0)
-
-	// Total
-	totalPriceKurus := subtotalKurus + vatKurus
-
-	// Cost price (for marketplace margin calculation)
-	// In a real implementation, this would come from provider contracts
-	costPriceKurus := int32(float64(totalPriceKurus) * 0.85) // 15% margin
-	marginKurus := totalPriceKurus - costPriceKurus
-
-	expiresAt := time.Now().Add(QuoteExpiry)
-
-	return &db.CreateOfferParams{
-		QuoteID:            quoteID,
-		ProviderCode:       provider.Code,
-		ServiceCode:        service.ServiceCode,
-		ProviderAccountID:  pgtype.UUID{}, // NULL for marketplace
-		IsMarketplace:      true,
-		BasePriceKurus:     basePriceKurus + surchargeKurus,
-		FuelSurchargeKurus: fuelSurchargeKurus,
-		CodFeeKurus:        codFeeKurus,
-		InsuranceFeeKurus:  insuranceFeeKurus,
-		OtherFeesKurus:     0,
-		SubtotalKurus:      subtotalKurus,
-		VatKurus:           vatKurus,
-		TotalPriceKurus:    totalPriceKurus,
-		CostPriceKurus:     &costPriceKurus,
-		MarginKurus:        &marginKurus,
-		EstimatedDaysMin:   service.EstimatedDaysMin,
-		EstimatedDaysMax:   service.EstimatedDaysMax,
-		ProviderQuoteID:    nil,
-		ExpiresAt:          pgtype.Timestamptz{Time: expiresAt, Valid: true},
-	}, nil
 }
 
 // GetQuote retrieves a quote by ID.
@@ -665,11 +688,3 @@ func (s *Service) CleanupExpiredQuotes(ctx context.Context) error {
 	return s.queries.DeleteExpiredQuotes(ctx)
 }
 
-// Helper function to convert pgtype.Numeric to float64
-func numericToFloat64(n pgtype.Numeric) float64 {
-	if !n.Valid {
-		return 0
-	}
-	f, _ := n.Float64Value()
-	return f.Float64
-}

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -12,10 +13,11 @@ import (
 // It provides a registry for adapter constructors and creates
 // adapter instances on demand.
 type AdapterFactory struct {
-	mu           sync.RWMutex
-	constructors map[domain.ProviderCode]AdapterConstructor
-	configs      map[domain.ProviderCode]AdapterConfig
-	logger       *slog.Logger
+	mu            sync.RWMutex
+	constructors  map[domain.ProviderCode]AdapterConstructor
+	configs       map[domain.ProviderCode]AdapterConfig
+	logger        *slog.Logger
+	requestLogger func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, err error)
 }
 
 // AdapterConstructor is a function that creates a new adapter instance.
@@ -44,6 +46,14 @@ func (f *AdapterFactory) Register(providerCode domain.ProviderCode, constructor 
 	)
 }
 
+// SetRequestLogger sets a global request logger callback that is applied to all adapters.
+// This is called after each SOAP/REST request with full request/response details.
+func (f *AdapterFactory) SetRequestLogger(cb func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, err error)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.requestLogger = cb
+}
+
 // SetConfig sets the configuration for a provider.
 func (f *AdapterFactory) SetConfig(providerCode domain.ProviderCode, config AdapterConfig) {
 	f.mu.Lock()
@@ -65,6 +75,7 @@ func (f *AdapterFactory) Create(providerCode domain.ProviderCode) (Adapter, erro
 	f.mu.RLock()
 	constructor, ok := f.constructors[providerCode]
 	config := f.configs[providerCode]
+	requestLogger := f.requestLogger
 	f.mu.RUnlock()
 
 	if !ok {
@@ -74,6 +85,11 @@ func (f *AdapterFactory) Create(providerCode domain.ProviderCode) (Adapter, erro
 	// Use default config if not set
 	if config.BaseURL == "" {
 		config = DefaultAdapterConfig()
+	}
+
+	// Apply global request logger if set and adapter config doesn't have one
+	if config.OnAPIRequest == nil && requestLogger != nil {
+		config.OnAPIRequest = requestLogger
 	}
 
 	adapter, err := constructor(config, f.logger)
@@ -88,10 +104,16 @@ func (f *AdapterFactory) Create(providerCode domain.ProviderCode) (Adapter, erro
 func (f *AdapterFactory) CreateWithConfig(providerCode domain.ProviderCode, config AdapterConfig) (Adapter, error) {
 	f.mu.RLock()
 	constructor, ok := f.constructors[providerCode]
+	requestLogger := f.requestLogger
 	f.mu.RUnlock()
 
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrProviderNotFound, providerCode)
+	}
+
+	// Apply global request logger if set and config doesn't have one
+	if config.OnAPIRequest == nil && requestLogger != nil {
+		config.OnAPIRequest = requestLogger
 	}
 
 	adapter, err := constructor(config, f.logger)

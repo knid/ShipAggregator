@@ -581,6 +581,10 @@ type AdapterConfig struct {
 	RetryBaseDelay time.Duration `json:"retry_base_delay"`
 	// RetryMaxDelay is the maximum delay between retries.
 	RetryMaxDelay time.Duration `json:"retry_max_delay"`
+	// OnAPIRequest is called after each provider API request with full request/response details.
+	// Used for persisting provider API call logs.
+	// Parameters: ctx, providerCode, operation, endpoint, reqBody, respBody, status, latencyMs, success, err
+	OnAPIRequest func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, err error) `json:"-"`
 }
 
 // DefaultAdapterConfig returns the default adapter configuration.

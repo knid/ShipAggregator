@@ -1,177 +1,122 @@
 package aras
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/knid/kargonet/internal/domain"
 )
 
-// statusMapping maps Aras status codes to normalized tracking statuses.
-// Based on the provider-capabilities-matrix.md specification.
-var statusMapping = map[string]domain.TrackingStatus{
-	// Pickup/Acceptance statuses
-	"KARGO_KABUL":   domain.TrackingStatusPickedUp,
-	"KABUL":         domain.TrackingStatusPickedUp,
-	"KARGO_ALINDI":  domain.TrackingStatusPickedUp,
-	"TESLIM_ALINDI": domain.TrackingStatusPickedUp,
+// ---------------------------------------------------------------------------
+// Status code mapping — real Aras numeric DURUM_KODU from GetCargoTransaction
+// ---------------------------------------------------------------------------
 
-	// Transit statuses
-	"TRANSFER_MERKEZ": domain.TrackingStatusInTransit,
-	"TRANSFER":        domain.TrackingStatusInTransit,
-	"AKTARMA":         domain.TrackingStatusInTransit,
-	"YOLDA":           domain.TrackingStatusInTransit,
-	"CIKIS":           domain.TrackingStatusInTransit,
+// statusCodeMapping maps Aras numeric status codes (DURUM_KODU) to normalized
+// tracking statuses.
+var statusCodeMapping = map[string]domain.TrackingStatus{
+	"1": domain.TrackingStatusPickedUp,       // Kabul (at origin)
+	"2": domain.TrackingStatusInTransit,       // Transfer (in transit)
+	"3": domain.TrackingStatusAtHub,           // Dağıtım şubesinde (at delivery branch)
+	"4": domain.TrackingStatusOutForDelivery,  // Dağıtımda (out for delivery)
+	"5": domain.TrackingStatusDeliveryFailed,  // Kısmi teslim / Teslim edilemedi
+	"6": domain.TrackingStatusDelivered,       // Teslim edildi
+	"7": domain.TrackingStatusReturning,       // Yönlendirildi / İade
+}
 
-	// At hub/branch statuses
-	"DAGITIM_SUBESINDE": domain.TrackingStatusAtHub,
-	"SUBEDE":            domain.TrackingStatusAtHub,
-	"SUBE_TESLIM":       domain.TrackingStatusAtHub,
-	"DAGITIM_MERKEZI":   domain.TrackingStatusAtHub,
-
-	// Out for delivery statuses
-	"DAGITIMDA":        domain.TrackingStatusOutForDelivery,
-	"DAGITIMA_CIKTI":   domain.TrackingStatusOutForDelivery,
-	"KURYE_ZIMMETINDE": domain.TrackingStatusOutForDelivery,
-
-	// Delivered statuses
-	"TESLIM_EDILDI":  domain.TrackingStatusDelivered,
-	"TESLIM":         domain.TrackingStatusDelivered,
-	"ALICIYA_TESLIM": domain.TrackingStatusDelivered,
-
-	// Delivery failed statuses
-	"TESLIM_EDILEMEDI": domain.TrackingStatusDeliveryFailed,
-	"TESLIM_BASARISIZ": domain.TrackingStatusDeliveryFailed,
-	"ADRES_BULUNAMADI": domain.TrackingStatusDeliveryFailed,
-	"ALICI_YOK":        domain.TrackingStatusDeliveryFailed,
-
-	// Return statuses
-	"IADE":           domain.TrackingStatusReturning,
-	"IADE_SURECINDE": domain.TrackingStatusReturning,
-	"GONDERENE_IADE": domain.TrackingStatusReturning,
-
-	// Returned to sender statuses
-	"IADE_TESLIM":      domain.TrackingStatusReturnedToSender,
-	"IADE_EDILDI":      domain.TrackingStatusReturnedToSender,
-	"GONDERENE_TESLIM": domain.TrackingStatusReturnedToSender,
-
-	// Cancelled statuses
-	"IPTAL":        domain.TrackingStatusCancelled,
-	"IPTAL_EDILDI": domain.TrackingStatusCancelled,
-
-	// Exception statuses
-	"HASAR":     domain.TrackingStatusException,
-	"KAYIP":     domain.TrackingStatusException,
-	"BEKLEMEDE": domain.TrackingStatusException,
+// transferCodeMapping maps Aras transfer codes (DEVIR_KODU) to tracking statuses
+// for more specific status determination when DURUM_KODU alone isn't enough.
+var transferCodeMapping = map[string]domain.TrackingStatus{
+	"AY": domain.TrackingStatusDeliveryFailed,  // 10 - Adres yanlış/yetersiz
+	"NT": domain.TrackingStatusDeliveryFailed,  // 11 - Uğrama notu bırakıldı
+	"MD": domain.TrackingStatusOutForDelivery,  // 12 - Mobil dağıtım gününde teslimat
+	"TL": domain.TrackingStatusDeliveryFailed,  // 14 - Tatil dolayısıyla teslimat yapılamadı
+	"ŞA": domain.TrackingStatusAtHub,           // 15 - Müşteri kargosunu şubeden alacak
+	"AD": domain.TrackingStatusDeliveryFailed,  // 17 - Alıcı adresi dağıtım alanı dışında
+	"TG": domain.TrackingStatusDeliveryFailed,  // 18 - Teslimat gün içerisinde yapılamadı
+	"AA": domain.TrackingStatusDeliveryFailed,  // 20 - Alıcı adreste tanınmıyor
+	"HT": domain.TrackingStatusException,       // 22 - Hasarlı/tazminlik/sorunlu kargo
+	"KG": domain.TrackingStatusInTransit,       // 26 - Kargo gümrükte
+	"PR": domain.TrackingStatusAtHub,           // 32 - Pratik 7/24
+	"ÜR": domain.TrackingStatusDeliveryFailed,  // 33 - Alıcı taşıma ücretini ödemeyi reddetti
+	"KE": domain.TrackingStatusDeliveryFailed,  // 34 - Alıcı kargoyu kabul etmiyor
+	"TT": domain.TrackingStatusOutForDelivery,  // 45 - Tercihli teslimat
+	"PS": domain.TrackingStatusException,       // 47 - Parça sorunlu/teslim edilemedi
+	"TO": domain.TrackingStatusDeliveryFailed,  // 51 - Toplumsal olaylar
 }
 
 // MapStatus maps an Aras status code to a normalized tracking status.
-// Returns TrackingStatusException for unknown status codes.
-func MapStatus(arasStatus string) domain.TrackingStatus {
-	// Normalize the status code (uppercase, trim spaces)
-	normalized := strings.ToUpper(strings.TrimSpace(arasStatus))
-
-	// Replace common variations
-	normalized = strings.ReplaceAll(normalized, " ", "_")
-	normalized = strings.ReplaceAll(normalized, "-", "_")
-
-	if status, ok := statusMapping[normalized]; ok {
+// Accepts numeric DURUM_KODU from GetCargoTransaction response.
+func MapStatus(statusCode string) domain.TrackingStatus {
+	code := strings.TrimSpace(statusCode)
+	if status, ok := statusCodeMapping[code]; ok {
 		return status
 	}
-
-	// Try partial matching for common patterns
-	if strings.Contains(normalized, "TESLIM_EDILDI") || strings.Contains(normalized, "TESLIM_ALINDI") {
-		return domain.TrackingStatusDelivered
-	}
-	if strings.Contains(normalized, "DAGITIM") && strings.Contains(normalized, "CIKTI") {
-		return domain.TrackingStatusOutForDelivery
-	}
-	if strings.Contains(normalized, "TRANSFER") || strings.Contains(normalized, "AKTARMA") {
-		return domain.TrackingStatusInTransit
-	}
-	if strings.Contains(normalized, "IADE") {
-		if strings.Contains(normalized, "TESLIM") {
-			return domain.TrackingStatusReturnedToSender
-		}
-		return domain.TrackingStatusReturning
-	}
-	if strings.Contains(normalized, "IPTAL") {
-		return domain.TrackingStatusCancelled
-	}
-
-	// Default to exception for unknown statuses
 	return domain.TrackingStatusException
 }
 
-// MapStatusDescription returns a human-readable description for an Aras status.
-func MapStatusDescription(arasStatus string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(arasStatus))
+// MapStatusWithTransferCode maps status using both DURUM_KODU and DEVIR_KODU
+// for more precise determination.
+func MapStatusWithTransferCode(statusCode, transferCode string) domain.TrackingStatus {
+	tc := strings.TrimSpace(strings.ToUpper(transferCode))
+	if tc != "" {
+		if status, ok := transferCodeMapping[tc]; ok {
+			return status
+		}
+	}
+	return MapStatus(statusCode)
+}
 
+// MapStatusDescription returns a human-readable description for an Aras status code.
+func MapStatusDescription(statusCode string) string {
 	descriptions := map[string]string{
-		"KARGO_KABUL":       "Kargo kabul edildi",
-		"KABUL":             "Kabul edildi",
-		"KARGO_ALINDI":      "Kargo alındı",
-		"TESLIM_ALINDI":     "Teslim alındı",
-		"TRANSFER_MERKEZ":   "Transfer merkezinde",
-		"TRANSFER":          "Transfer aşamasında",
-		"AKTARMA":           "Aktarma merkezinde",
-		"YOLDA":             "Yolda",
-		"CIKIS":             "Çıkış yapıldı",
-		"DAGITIM_SUBESINDE": "Dağıtım şubesinde",
-		"SUBEDE":            "Şubede",
-		"SUBE_TESLIM":       "Şubeye teslim edildi",
-		"DAGITIM_MERKEZI":   "Dağıtım merkezinde",
-		"DAGITIMDA":         "Dağıtımda",
-		"DAGITIMA_CIKTI":    "Dağıtıma çıktı",
-		"KURYE_ZIMMETINDE":  "Kurye zimmetinde",
-		"TESLIM_EDILDI":     "Teslim edildi",
-		"TESLIM":            "Teslim edildi",
-		"ALICIYA_TESLIM":    "Alıcıya teslim edildi",
-		"TESLIM_EDILEMEDI":  "Teslim edilemedi",
-		"TESLIM_BASARISIZ":  "Teslim başarısız",
-		"ADRES_BULUNAMADI":  "Adres bulunamadı",
-		"ALICI_YOK":         "Alıcı bulunamadı",
-		"IADE":              "İade sürecinde",
-		"IADE_SURECINDE":    "İade sürecinde",
-		"GONDERENE_IADE":    "Gönderene iade ediliyor",
-		"IADE_TESLIM":       "İade teslim edildi",
-		"IADE_EDILDI":       "İade edildi",
-		"GONDERENE_TESLIM":  "Gönderene teslim edildi",
-		"IPTAL":             "İptal edildi",
-		"IPTAL_EDILDI":      "İptal edildi",
-		"HASAR":             "Hasarlı",
-		"KAYIP":             "Kayıp",
-		"BEKLEMEDE":         "Beklemede",
+		"1": "Kargo kabul edildi",
+		"2": "Transfer aşamasında",
+		"3": "Dağıtım şubesinde",
+		"4": "Dağıtımda",
+		"5": "Teslim edilemedi",
+		"6": "Teslim edildi",
+		"7": "İade sürecinde",
 	}
 
-	if desc, ok := descriptions[normalized]; ok {
+	code := strings.TrimSpace(statusCode)
+	if desc, ok := descriptions[code]; ok {
 		return desc
 	}
-
-	// Return the original status if no description found
-	return arasStatus
+	return fmt.Sprintf("Durum kodu: %s", statusCode)
 }
 
-// MapServiceCode maps internal service codes to Aras service codes.
+// ---------------------------------------------------------------------------
+// Service code mapping
+// ---------------------------------------------------------------------------
+
+// MapServiceCode maps internal service codes to Aras service IDs.
+// Aras uses numeric service IDs (e.g. "1" = normal, "2" = express).
 func MapServiceCode(serviceCode string) string {
 	switch strings.ToLower(serviceCode) {
-	case "standard", "standart":
-		return "STANDART"
+	case "standard", "standart", "normal":
+		return "1"
 	case "express", "hizli":
-		return "HIZLI"
+		return "2"
 	default:
-		return strings.ToUpper(serviceCode)
+		return serviceCode
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Label format mapping
+// ---------------------------------------------------------------------------
 
 // MapLabelFormat maps internal label formats to Aras label formats.
 func MapLabelFormat(format domain.LabelFormat) string {
 	switch format {
 	case domain.LabelFormatPDF:
-		return LabelFormatPDF
+		return "PDF"
 	case domain.LabelFormatZPL:
-		return LabelFormatZPL
+		return "ZPL"
+	case domain.LabelFormatPNG:
+		return "PNG"
 	default:
-		return LabelFormatPDF
+		return "PDF"
 	}
 }
 
@@ -182,53 +127,51 @@ func MapLabelFormatFromAras(format string) domain.LabelFormat {
 		return domain.LabelFormatPDF
 	case "ZPL":
 		return domain.LabelFormatZPL
+	case "PNG":
+		return domain.LabelFormatPNG
 	default:
 		return domain.LabelFormatPDF
 	}
 }
 
-// MapContentType returns the MIME content type for an Aras label format.
+// MapContentType returns the MIME content type for a label format.
 func MapContentType(format string) string {
 	switch strings.ToUpper(format) {
 	case "PDF":
 		return "application/pdf"
 	case "ZPL":
 		return "application/x-zpl"
+	case "PNG":
+		return "image/png"
 	default:
 		return "application/octet-stream"
 	}
 }
 
-// ErrorCodeMapping maps Aras error codes to provider error codes.
-var ErrorCodeMapping = map[string]string{
-	"AUTH_FAILED":         "PROVIDER_AUTH_FAILED",
-	"INVALID_CREDENTIALS": "PROVIDER_AUTH_FAILED",
-	"INVALID_ADDRESS":     "PROVIDER_REJECTED",
-	"INVALID_PARCEL":      "PROVIDER_REJECTED",
-	"SERVICE_UNAVAILABLE": "PROVIDER_DOWN",
-	"RATE_LIMITED":        "PROVIDER_RATE_LIMITED",
-	"SHIPMENT_NOT_FOUND":  "PROVIDER_NOT_FOUND",
-	"ALREADY_CANCELLED":   "PROVIDER_REJECTED",
-	"CANNOT_CANCEL":       "PROVIDER_REJECTED",
-	"INVALID_QUOTE":       "PROVIDER_REJECTED",
-	"QUOTE_EXPIRED":       "PROVIDER_REJECTED",
+// ---------------------------------------------------------------------------
+// Error code mapping — real Aras result codes
+// ---------------------------------------------------------------------------
+
+// MapErrorCode maps an Aras result code to a normalized error code.
+func MapErrorCode(resultCode string) string {
+	switch resultCode {
+	case "0":
+		return "" // success
+	case "-1", "-2":
+		return "PROVIDER_AUTH_FAILED"
+	case "-99":
+		return "PROVIDER_ERROR"
+	default:
+		return "PROVIDER_REJECTED"
+	}
 }
 
-// MapErrorCode maps an Aras error code to a normalized error code.
-func MapErrorCode(arasErrorCode string) string {
-	if code, ok := ErrorCodeMapping[arasErrorCode]; ok {
-		return code
+// IsRetryableError checks if an Aras error indicates a retryable condition.
+func IsRetryableError(resultCode string) bool {
+	switch resultCode {
+	case "-99": // generic server error
+		return true
+	default:
+		return false
 	}
-	return "PROVIDER_ERROR"
-}
-
-// IsRetryableError checks if an Aras error code indicates a retryable error.
-func IsRetryableError(arasErrorCode string) bool {
-	retryable := map[string]bool{
-		"SERVICE_UNAVAILABLE": true,
-		"RATE_LIMITED":        true,
-		"TIMEOUT":             true,
-		"CONNECTION_ERROR":    true,
-	}
-	return retryable[arasErrorCode]
 }

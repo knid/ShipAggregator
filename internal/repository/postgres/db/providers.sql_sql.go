@@ -662,3 +662,70 @@ func (q *Queries) ListProviders(ctx context.Context, isActive *bool) ([]*Provide
 	}
 	return items, nil
 }
+
+const listProvidersEnriched = `-- name: ListProvidersEnriched :many
+SELECT p.code, p.name, p.logo_url, p.website, p.support_email, p.support_phone,
+       p.api_type, p.api_base_url, p.api_sandbox_url, p.is_active, p.capabilities,
+       p.created_at, p.updated_at,
+       EXISTS(
+           SELECT 1 FROM marketplace_rate_plans mrp
+           WHERE mrp.provider_code = p.code AND mrp.is_active = TRUE
+             AND mrp.effective_from <= CURRENT_DATE
+             AND (mrp.effective_to IS NULL OR mrp.effective_to >= CURRENT_DATE)
+       ) AS marketplace_enabled
+FROM providers p
+WHERE ($1::boolean IS NULL OR p.is_active = $1::boolean)
+ORDER BY p.name ASC
+`
+
+type ListProvidersEnrichedRow struct {
+	Code               string             `db:"code" json:"code"`
+	Name               string             `db:"name" json:"name"`
+	LogoUrl            *string            `db:"logo_url" json:"logo_url"`
+	Website            *string            `db:"website" json:"website"`
+	SupportEmail       *string            `db:"support_email" json:"support_email"`
+	SupportPhone       *string            `db:"support_phone" json:"support_phone"`
+	ApiType            string             `db:"api_type" json:"api_type"`
+	ApiBaseUrl         string             `db:"api_base_url" json:"api_base_url"`
+	ApiSandboxUrl      *string            `db:"api_sandbox_url" json:"api_sandbox_url"`
+	IsActive           bool               `db:"is_active" json:"is_active"`
+	Capabilities       json.RawMessage    `db:"capabilities" json:"capabilities"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	MarketplaceEnabled bool               `db:"marketplace_enabled" json:"marketplace_enabled"`
+}
+
+func (q *Queries) ListProvidersEnriched(ctx context.Context, isActive *bool) ([]*ListProvidersEnrichedRow, error) {
+	rows, err := q.db.Query(ctx, listProvidersEnriched, isActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListProvidersEnrichedRow{}
+	for rows.Next() {
+		var i ListProvidersEnrichedRow
+		if err := rows.Scan(
+			&i.Code,
+			&i.Name,
+			&i.LogoUrl,
+			&i.Website,
+			&i.SupportEmail,
+			&i.SupportPhone,
+			&i.ApiType,
+			&i.ApiBaseUrl,
+			&i.ApiSandboxUrl,
+			&i.IsActive,
+			&i.Capabilities,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MarketplaceEnabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -56,22 +56,18 @@ func NewAdminHandler(
 func (h *AdminHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get organization ID from context (optional for admin)
-	orgID := middleware.GetOrganizationID(ctx)
-
 	// Parse query parameters
 	filter := &postgres.AuditLogFilter{
 		Offset: int32(parseIntParam(r, "offset", 0)),
 		Limit:  int32(parseIntParam(r, "limit", 20)),
 	}
 
-	// Organization filter (admin can see all, regular users see their own)
+	// Organization filter — admin endpoints show all logs by default;
+	// only filter by org when explicitly requested via query param.
 	if orgIDStr := r.URL.Query().Get("organization_id"); orgIDStr != "" {
 		if id, err := uuid.Parse(orgIDStr); err == nil {
 			filter.OrganizationID = &id
 		}
-	} else if orgID != uuid.Nil {
-		filter.OrganizationID = &orgID
 	}
 
 	// Actor filter
@@ -225,22 +221,18 @@ func (h *AdminHandler) GetAuditLogSummary(w http.ResponseWriter, r *http.Request
 func (h *AdminHandler) ListProviderLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get organization ID from context (optional for admin)
-	orgID := middleware.GetOrganizationID(ctx)
-
 	// Parse query parameters
 	filter := &postgres.ProviderAPILogFilter{
 		Offset: int32(parseIntParam(r, "offset", 0)),
 		Limit:  int32(parseIntParam(r, "limit", 20)),
 	}
 
-	// Organization filter
+	// Organization filter — admin endpoints show all logs by default;
+	// only filter by org when explicitly requested via query param.
 	if orgIDStr := r.URL.Query().Get("organization_id"); orgIDStr != "" {
 		if id, err := uuid.Parse(orgIDStr); err == nil {
 			filter.OrganizationID = &id
 		}
-	} else if orgID != uuid.Nil {
-		filter.OrganizationID = &orgID
 	}
 
 	// Provider code filter

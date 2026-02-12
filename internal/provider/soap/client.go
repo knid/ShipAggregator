@@ -58,6 +58,26 @@ func (v SOAPVersion) Namespace() string {
 	}
 }
 
+// RequestLog contains details of a SOAP request/response for logging.
+type RequestLog struct {
+	// Endpoint is the SOAP endpoint URL.
+	Endpoint string
+	// Action is the SOAP action name.
+	Action string
+	// RequestBody is the raw SOAP envelope sent.
+	RequestBody []byte
+	// ResponseBody is the raw response body received.
+	ResponseBody []byte
+	// ResponseStatus is the HTTP status code (0 if request failed).
+	ResponseStatus int
+	// LatencyMs is the request latency in milliseconds.
+	LatencyMs int64
+	// Success indicates whether the request succeeded (HTTP 2xx).
+	Success bool
+	// Error is the error if the request failed.
+	Error error
+}
+
 // ClientConfig contains configuration for the SOAP client.
 type ClientConfig struct {
 	// Endpoint is the SOAP service endpoint URL.
@@ -76,6 +96,9 @@ type ClientConfig struct {
 	SkipTLSVerify bool
 	// Logger is the logger instance.
 	Logger *slog.Logger
+	// OnRequest is called after each SOAP request with full request/response details.
+	// This is intended for persisting API call logs to a database.
+	OnRequest func(ctx context.Context, log RequestLog)
 }
 
 // DefaultClientConfig returns the default client configuration.
@@ -181,7 +204,9 @@ func (c *Client) CallWithEndpoint(ctx context.Context, endpoint, action string, 
 			slog.Duration("latency", latency),
 			slog.String("error", err.Error()),
 		)
-		return c.mapHTTPError(err)
+		mappedErr := c.mapHTTPError(err)
+		c.emitRequestLog(ctx, endpoint, action, envelope, nil, 0, latency, mappedErr)
+		return mappedErr
 	}
 	defer httpResp.Body.Close()
 
@@ -207,19 +232,27 @@ func (c *Client) CallWithEndpoint(ctx context.Context, endpoint, action string, 
 		// Try to parse SOAP fault
 		fault, faultErr := c.parseFault(respBody)
 		if faultErr == nil && fault != nil {
-			return fault.ToProviderError()
+			provErr := fault.ToProviderError()
+			c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, provErr)
+			return provErr
 		}
-		return &provider.ProviderError{
+		httpErr := &provider.ProviderError{
 			Code:      "HTTP_ERROR",
 			Message:   fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, httpResp.Status),
 			Retryable: httpResp.StatusCode >= 500,
 		}
+		c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, httpErr)
+		return httpErr
 	}
 
 	// Check for empty response
 	if len(respBody) == 0 {
+		c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, ErrEmptyResponse)
 		return ErrEmptyResponse
 	}
+
+	// Emit successful request log
+	c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, nil)
 
 	// Parse response
 	if err := c.parseResponse(respBody, response); err != nil {
@@ -227,6 +260,23 @@ func (c *Client) CallWithEndpoint(ctx context.Context, endpoint, action string, 
 	}
 
 	return nil
+}
+
+// emitRequestLog calls the OnRequest callback if configured.
+func (c *Client) emitRequestLog(ctx context.Context, endpoint, action string, reqBody, respBody []byte, status int, latency time.Duration, err error) {
+	if c.config.OnRequest == nil {
+		return
+	}
+	c.config.OnRequest(ctx, RequestLog{
+		Endpoint:       endpoint,
+		Action:         action,
+		RequestBody:    reqBody,
+		ResponseBody:   respBody,
+		ResponseStatus: status,
+		LatencyMs:      latency.Milliseconds(),
+		Success:        err == nil && status >= 200 && status < 400,
+		Error:          err,
+	})
 }
 
 // CallRaw makes a raw SOAP request with a pre-built envelope.
@@ -268,7 +318,9 @@ func (c *Client) CallRawWithEndpoint(ctx context.Context, endpoint, action strin
 			slog.Duration("latency", latency),
 			slog.String("error", err.Error()),
 		)
-		return nil, c.mapHTTPError(err)
+		mappedErr := c.mapHTTPError(err)
+		c.emitRequestLog(ctx, endpoint, action, envelope, nil, 0, latency, mappedErr)
+		return nil, mappedErr
 	}
 	defer httpResp.Body.Close()
 
@@ -291,15 +343,20 @@ func (c *Client) CallRawWithEndpoint(ctx context.Context, endpoint, action strin
 	if httpResp.StatusCode >= 400 {
 		fault, faultErr := c.parseFault(respBody)
 		if faultErr == nil && fault != nil {
-			return nil, fault.ToProviderError()
+			provErr := fault.ToProviderError()
+			c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, provErr)
+			return nil, provErr
 		}
-		return nil, &provider.ProviderError{
+		httpErr := &provider.ProviderError{
 			Code:      "HTTP_ERROR",
 			Message:   fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, httpResp.Status),
 			Retryable: httpResp.StatusCode >= 500,
 		}
+		c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, httpErr)
+		return nil, httpErr
 	}
 
+	c.emitRequestLog(ctx, endpoint, action, envelope, respBody, httpResp.StatusCode, latency, nil)
 	return respBody, nil
 }
 

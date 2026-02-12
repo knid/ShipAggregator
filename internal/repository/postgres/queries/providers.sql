@@ -127,3 +127,17 @@ SELECT EXISTS(
 SELECT capabilities
 FROM providers
 WHERE code = $1;
+
+-- name: ListProvidersEnriched :many
+SELECT p.code, p.name, p.logo_url, p.website, p.support_email, p.support_phone,
+       p.api_type, p.api_base_url, p.api_sandbox_url, p.is_active, p.capabilities,
+       p.created_at, p.updated_at,
+       EXISTS(
+           SELECT 1 FROM marketplace_rate_plans mrp
+           WHERE mrp.provider_code = p.code AND mrp.is_active = TRUE
+             AND mrp.effective_from <= CURRENT_DATE
+             AND (mrp.effective_to IS NULL OR mrp.effective_to >= CURRENT_DATE)
+       ) AS marketplace_enabled
+FROM providers p
+WHERE (sqlc.narg('is_active')::boolean IS NULL OR p.is_active = sqlc.narg('is_active')::boolean)
+ORDER BY p.name ASC;

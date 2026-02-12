@@ -13,22 +13,29 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/knid/kargonet/internal/api"
 	"github.com/knid/kargonet/internal/api/handler"
+	"github.com/knid/kargonet/internal/api/middleware"
 	"github.com/knid/kargonet/internal/config"
+	"github.com/knid/kargonet/internal/domain"
 	"github.com/knid/kargonet/internal/observability"
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
+	"github.com/knid/kargonet/internal/payment/iyzico"
+	"github.com/knid/kargonet/internal/repository/postgres"
 	"github.com/knid/kargonet/internal/service/auth"
 	"github.com/knid/kargonet/internal/service/billing"
 	"github.com/knid/kargonet/internal/service/organization"
 	providerservice "github.com/knid/kargonet/internal/service/provider"
 	"github.com/knid/kargonet/internal/service/quote"
 	"github.com/knid/kargonet/internal/service/shipment"
+	"github.com/knid/kargonet/internal/service/tracking"
+	"github.com/knid/kargonet/internal/service/webhook"
 
 	// Import all provider adapters to register them with the global factory.
 	// This ensures all implemented carrier adapters are available for use.
@@ -153,10 +160,86 @@ func run() error {
 	sessionValidator := auth.NewSessionValidatorAdapter(queries)
 	logger.Info("session validator initialized")
 
+	// Initialize admin repositories (US10: Admin Tools) — early init for provider API logging
+	auditLogRepo := postgres.NewAuditLogRepository(dbPool, queries)
+	providerAPILogRepo := postgres.NewProviderAPILogRepository(dbPool, queries)
+	logger.Info("admin repositories initialized")
+
 	// Initialize provider adapter pool using the global factory
 	adapterFactory := provider.GlobalFactory()
+
+	// Wire provider API request logging: every SOAP call made by adapters
+	// is persisted to the provider_api_logs table for full observability.
+	adapterFactory.SetRequestLogger(func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, callErr error) {
+		// Extract organization ID from request context before goroutine
+		var orgID *uuid.UUID
+		if authOrgID := middleware.GetOrganizationID(ctx); authOrgID != uuid.Nil {
+			orgID = &authOrgID
+		}
+
+		var respStatus *int32
+		if status > 0 {
+			s := int32(status)
+			respStatus = &s
+		}
+
+		var reqPreview, respPreview *string
+		if len(reqBody) > 0 {
+			s := string(reqBody)
+			if len(s) > 4000 {
+				s = s[:4000]
+			}
+			reqPreview = &s
+		}
+		if len(respBody) > 0 {
+			s := string(respBody)
+			if len(s) > 4000 {
+				s = s[:4000]
+			}
+			respPreview = &s
+		}
+
+		var errCode, errMsg *string
+		if callErr != nil {
+			ec := "PROVIDER_ERROR"
+			em := callErr.Error()
+			errCode = &ec
+			errMsg = &em
+		}
+
+		// Persist asynchronously so it doesn't slow down the provider call
+		go func() {
+			_, err := providerAPILogRepo.Create(context.Background(), &postgres.CreateProviderAPILogParams{
+				OrganizationID:      orgID,
+				ProviderCode:        providerCode,
+				Operation:           operation,
+				RequestMethod:       "POST",
+				RequestURL:          endpoint,
+				RequestBodyPreview:  reqPreview,
+				ResponseStatus:      respStatus,
+				ResponseBodyPreview: respPreview,
+				LatencyMs:           int32(latencyMs),
+				Success:             success,
+				ErrorCode:           errCode,
+				ErrorMessage:        errMsg,
+			})
+			if err != nil {
+				logger.Error("failed to persist provider API log", "error", err, "provider", providerCode, "operation", operation)
+			}
+		}()
+	})
+
+	// Configure Aras adapter endpoint from ARAS_WSDL_URL if set
+	if cfg.Providers.Aras.WSDLURL != "" {
+		adapterFactory.SetConfig(domain.ProviderCodeAras, provider.AdapterConfig{
+			BaseURL: cfg.Providers.Aras.WSDLURL,
+			Timeout: 30 * time.Second,
+		})
+		logger.Info("aras adapter endpoint configured", "url", cfg.Providers.Aras.WSDLURL)
+	}
+
 	adapterPool := provider.NewAdapterPool(adapterFactory, slog.Default())
-	logger.Info("provider adapter pool initialized")
+	logger.Info("provider adapter pool initialized (with API logging)")
 
 	// Initialize billing services
 	walletService := billing.NewWalletService(queries, logger)
@@ -171,9 +254,69 @@ func run() error {
 	organizationService := organization.NewService(queries)
 	logger.Info("organization service initialized")
 
+	// Build platform credentials for marketplace pricing via live provider APIs
+	platformCreds := make(map[domain.ProviderCode]*domain.ProviderCredentials)
+	if cfg.Providers.Aras.Username != "" && cfg.Providers.Aras.Password != "" && cfg.Providers.Aras.CustomerCode != "" {
+		platformCreds[domain.ProviderCodeAras] = &domain.ProviderCredentials{
+			Username:     cfg.Providers.Aras.Username,
+			Password:     cfg.Providers.Aras.Password,
+			CustomerCode: cfg.Providers.Aras.CustomerCode,
+		}
+		logger.Info("platform credentials configured for Aras marketplace pricing")
+	}
+	// Yurtiçi uses static contract pricing (no API call), so credentials
+	// are not required for quoting. We still store them when available for
+	// other operations (shipment creation, tracking, etc.).
+	if cfg.Features.YurticiEnabled {
+		platformCreds[domain.ProviderCodeYurtici] = &domain.ProviderCredentials{
+			Username: cfg.Providers.Yurtici.Username,
+			Password: cfg.Providers.Yurtici.Password,
+		}
+		logger.Info("platform credentials configured for Yurtici marketplace pricing")
+	}
+
 	// Initialize quote service (US1: Multi-carrier rate shopping)
-	quoteService := quote.NewService(queries, logger)
-	logger.Info("quote service initialized")
+	var quoteService *quote.Service
+	if len(platformCreds) > 0 {
+		quoteService = quote.NewServiceWithPlatformCreds(queries, adapterPool, platformCreds, logger)
+		logger.Info("quote service initialized with live marketplace pricing")
+	} else {
+		quoteService = quote.NewService(queries, logger)
+		logger.Info("quote service initialized (no platform credentials, marketplace offers disabled)")
+	}
+
+	// Initialize tracking service (US5: Tracking Updates)
+	trackingService := tracking.NewService(dbPool, queries, logger)
+	logger.Info("tracking service initialized")
+
+	// Initialize webhook services (US5: Webhooks)
+	webhookPublisher := webhook.NewPublisher(dbPool, queries, logger)
+	webhookDeliveryService := webhook.NewDeliveryService(dbPool, queries, logger, nil)
+	logger.Info("webhook services initialized")
+
+	// Initialize billing sub-services (COD, Topup, Refund)
+	codService := billing.NewCODService(queries, ledgerService, logger)
+	refundService := billing.NewRefundService(queries, ledgerService, logger)
+	logger.Info("billing sub-services initialized (COD, refund)")
+
+	// Initialize topup service (US4: Wallet Top-Up via Iyzico)
+	var iyzicoClient *iyzico.Client
+	iyzicoReturnURL := cfg.Iyzico.CallbackURL
+	if cfg.Iyzico.APIKey != "" {
+		iyzicoClient = iyzico.NewClient(iyzico.Config{
+			APIKey:      cfg.Iyzico.APIKey,
+			SecretKey:   cfg.Iyzico.SecretKey,
+			BaseURL:     cfg.Iyzico.BaseURL,
+			CallbackURL: cfg.Iyzico.CallbackURL,
+		}, logger)
+		logger.Info("iyzico client initialized")
+	}
+	topupService := billing.NewTopupService(queries, iyzicoClient, ledgerService, billing.DefaultTopupConfig(), logger)
+	logger.Info("topup service initialized")
+
+	// Initialize API key service (US6: API Key Management)
+	apiKeyService := auth.NewAPIKeyService(queries)
+	logger.Info("api key service initialized")
 
 	// Initialize provider account services (US2: BYOA - Bring Your Own Account)
 	var providerAccountService *providerservice.AccountService
@@ -192,8 +335,12 @@ func run() error {
 			)
 			logger.Info("provider account services initialized (BYOA enabled)")
 
-			// Upgrade quote service with BYOA support
-			quoteService = quote.NewServiceWithBYOA(queries, adapterPool, providerAccountService, logger)
+			// Upgrade quote service with BYOA support (keep platform creds if configured)
+			if len(platformCreds) > 0 {
+				quoteService = quote.NewServiceWithPlatformCredsAndBYOA(queries, adapterPool, providerAccountService, platformCreds, logger)
+			} else {
+				quoteService = quote.NewServiceWithBYOA(queries, adapterPool, providerAccountService, logger)
+			}
 			logger.Info("quote service upgraded with BYOA support")
 		}
 	} else if cfg.Features.BYOAEnabled {
@@ -218,6 +365,17 @@ func run() error {
 		WalletService:               walletService,
 		LedgerService:               ledgerService,
 		OrganizationService:         organizationService,
+		TrackingService:             trackingService,
+		WebhookPublisher:            webhookPublisher,
+		WebhookDeliveryService:      webhookDeliveryService,
+		CODService:                  codService,
+		TopupService:                topupService,
+		RefundService:               refundService,
+		IyzicoClient:                iyzicoClient,
+		IyzicoReturnURL:             iyzicoReturnURL,
+		APIKeyService:               apiKeyService,
+		AuditLogRepository:          auditLogRepo,
+		ProviderAPILogRepository:    providerAPILogRepo,
 		CORSAllowedOrigins:          cfg.CORS.AllowedOrigins,
 		RateLimitPerMinute:          cfg.RateLimit.RequestsPerSecond * 60,
 		IdempotencyTTL:              cfg.Idempotency.TTL,

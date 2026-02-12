@@ -2,10 +2,10 @@ package aras
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -19,24 +19,25 @@ const (
 	// ProviderCode is the unique identifier for Aras Kargo.
 	ProviderCode = domain.ProviderCodeAras
 
-	// DefaultEndpoint is the default SOAP endpoint for Aras.
-	DefaultEndpoint = "https://customerws.araskargo.com.tr/aaborsa/ArasBorsaWS.asmx"
+	// DefaultEndpoint is the production .svc integration endpoint.
+	DefaultEndpoint = "https://customerservices.araskargo.com.tr/ArasCargoCustomerIntegrationService/ArasCargoIntegrationService.svc"
 
-	// SandboxEndpoint is the sandbox SOAP endpoint for Aras.
-	SandboxEndpoint = "https://customerws-test.araskargo.com.tr/aaborsa/ArasBorsaWS.asmx"
+	// SandboxEndpoint is the sandbox .svc integration endpoint.
+	SandboxEndpoint = "http://customerservicestest.araskargo.com.tr/ArasCargoIntegrationService.svc"
 
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
 
-	// QuoteValidityDuration is how long quotes are valid.
-	QuoteValidityDuration = 1 * time.Hour
+	// SOAP actions for the integration service.
+	soapActionGetQueryJSON = "http://tempuri.org/IArasCargoIntegrationService/GetQueryJSON"
+	soapActionSetDataXML   = "http://tempuri.org/IArasCargoIntegrationService/SetDataXML"
 )
 
 // Config contains configuration for the Aras adapter.
 type Config struct {
-	// Endpoint is the SOAP service endpoint URL.
+	// Endpoint is the .svc integration service URL.
 	Endpoint string
-	// SandboxEndpoint is the sandbox endpoint URL.
+	// SandboxEndpoint is the sandbox .svc URL.
 	SandboxEndpoint string
 	// Timeout is the request timeout.
 	Timeout time.Duration
@@ -44,6 +45,8 @@ type Config struct {
 	UseSandbox bool
 	// Logger is the logger instance.
 	Logger *slog.Logger
+	// OnAPIRequest is called after each SOAP request for logging.
+	OnAPIRequest func(ctx context.Context, providerCode, operation, endpoint string, reqBody, respBody []byte, status int, latencyMs int64, success bool, err error)
 }
 
 // DefaultConfig returns the default configuration.
@@ -52,16 +55,16 @@ func DefaultConfig() Config {
 		Endpoint:        DefaultEndpoint,
 		SandboxEndpoint: SandboxEndpoint,
 		Timeout:         DefaultTimeout,
-		UseSandbox:      false,
 	}
 }
 
 // Adapter implements the provider.Adapter interface for Aras Kargo.
+// It uses the ArasCargoIntegrationService.svc unified SOAP 1.1 service.
 type Adapter struct {
 	provider.BaseAdapter
-	config     Config
-	soapClient *soap.Client
-	logger     *slog.Logger
+	config Config
+	client *soap.Client
+	logger *slog.Logger
 }
 
 // NewAdapter creates a new Aras adapter.
@@ -75,17 +78,26 @@ func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 		endpoint = config.SandboxEndpoint
 	}
 
-	soapConfig := soap.ClientConfig{
+	var onRequest func(ctx context.Context, log soap.RequestLog)
+	if config.OnAPIRequest != nil {
+		onReq := config.OnAPIRequest
+		onRequest = func(ctx context.Context, log soap.RequestLog) {
+			onReq(ctx, string(ProviderCode), log.Action, log.Endpoint, log.RequestBody, log.ResponseBody, log.ResponseStatus, log.LatencyMs, log.Success, log.Error)
+		}
+	}
+
+	clientConfig := soap.ClientConfig{
 		Endpoint:    endpoint,
 		Timeout:     config.Timeout,
 		SOAPVersion: soap.SOAP11,
 		Logger:      logger,
+		OnRequest:   onRequest,
 	}
 
 	return &Adapter{
 		BaseAdapter: provider.NewBaseAdapter(ProviderCode, domain.ProviderAPITypeSOAP),
 		config:      config,
-		soapClient:  soap.NewClient(soapConfig),
+		client:      soap.NewClient(clientConfig),
 		logger:      logger,
 	}, nil
 }
@@ -93,11 +105,17 @@ func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 // NewAdapterFromProviderConfig creates an adapter from provider.AdapterConfig.
 func NewAdapterFromProviderConfig(cfg provider.AdapterConfig, logger *slog.Logger) (provider.Adapter, error) {
 	config := Config{
-		Endpoint:        cfg.BaseURL,
-		SandboxEndpoint: cfg.SandboxURL,
-		Timeout:         cfg.Timeout,
-		UseSandbox:      cfg.UseSandbox,
-		Logger:          logger,
+		Timeout:      cfg.Timeout,
+		UseSandbox:   cfg.UseSandbox,
+		Logger:       logger,
+		OnAPIRequest: cfg.OnAPIRequest,
+	}
+
+	if cfg.BaseURL != "" {
+		config.Endpoint = deriveEndpoint(cfg.BaseURL)
+	}
+	if cfg.SandboxURL != "" {
+		config.SandboxEndpoint = deriveEndpoint(cfg.SandboxURL)
 	}
 
 	if config.Endpoint == "" {
@@ -113,7 +131,129 @@ func NewAdapterFromProviderConfig(cfg provider.AdapterConfig, logger *slog.Logge
 	return NewAdapter(config, logger)
 }
 
+// deriveEndpoint constructs the full .svc endpoint from a base URL (scheme+host).
+// Production and sandbox have different paths per the official Aras documentation.
+func deriveEndpoint(baseURL string) string {
+	schemeHost := extractSchemeHost(baseURL)
+	if strings.Contains(schemeHost, "test") {
+		return schemeHost + "/ArasCargoIntegrationService.svc"
+	}
+	return schemeHost + "/ArasCargoCustomerIntegrationService/ArasCargoIntegrationService.svc"
+}
+
+// extractSchemeHost returns the scheme://host portion of a URL.
+func extractSchemeHost(u string) string {
+	idx := strings.Index(u, "://")
+	if idx == -1 {
+		return u
+	}
+	afterScheme := u[idx+3:]
+	slashIdx := strings.Index(afterScheme, "/")
+	if slashIdx == -1 {
+		return u
+	}
+	return u[:idx+3+slashIdx]
+}
+
+// ---------------------------------------------------------------------------
+// Core helper — callQuery sends a GetQueryJSON SOAP request.
+// ---------------------------------------------------------------------------
+
+func (a *Adapter) callQuery(ctx context.Context, creds *Credentials, queryType int, params map[string]string) (json.RawMessage, error) {
+	loginInfo := buildLoginInfoXML(creds)
+	queryInfo := buildQueryInfoXML(queryType, params)
+
+	req := &GetQueryJSONRequest{
+		LoginInfo: loginInfo,
+		QueryInfo: queryInfo,
+	}
+
+	var resp GetQueryJSONResponse
+	if err := a.client.Call(ctx, soapActionGetQueryJSON, req, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Result == "" {
+		return nil, nil
+	}
+
+	var qr QueryResponse
+	if err := json.Unmarshal([]byte(resp.Result), &qr); err != nil {
+		return nil, fmt.Errorf("failed to parse query result JSON: %w", err)
+	}
+
+	if len(qr.QueryResult) == 0 || string(qr.QueryResult) == "null" {
+		return nil, nil
+	}
+
+	return qr.QueryResult, nil
+}
+
+// extractRows parses a QueryResult object and returns the first array value.
+// The JSON structure is {"SomeKey": [{...}, {...}]} — the key name varies by query type.
+func extractRows(raw json.RawMessage) ([]map[string]any, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, err
+	}
+
+	for _, v := range obj {
+		var rows []map[string]any
+		if err := json.Unmarshal(v, &rows); err != nil {
+			continue
+		}
+		return rows, nil
+	}
+
+	return nil, nil
+}
+
+// getStr extracts a string value from a row map, handling various JSON types.
+func getStr(row map[string]any, key string) string {
+	v, ok := row[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		if val == float64(int64(val)) {
+			return strconv.FormatInt(int64(val), 10)
+		}
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// buildLoginInfoXML builds the LoginInfo XML string for SOAP requests.
+func buildLoginInfoXML(creds *Credentials) string {
+	return fmt.Sprintf(
+		"<LoginInfo><UserName>%s</UserName><Password>%s</Password><CustomerCode>%s</CustomerCode></LoginInfo>",
+		creds.Username, creds.Password, creds.CustomerCode,
+	)
+}
+
+// buildQueryInfoXML builds the QueryInfo XML string for SOAP requests.
+func buildQueryInfoXML(queryType int, params map[string]string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<QueryInfo><QueryType>%d</QueryType>", queryType))
+	for k, v := range params {
+		sb.WriteString(fmt.Sprintf("<%s>%s</%s>", k, v, k))
+	}
+	sb.WriteString("</QueryInfo>")
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
 // getCredentials extracts Aras credentials from domain credentials.
+// ---------------------------------------------------------------------------
+
 func (a *Adapter) getCredentials(creds *domain.ProviderCredentials) (*Credentials, error) {
 	if creds == nil {
 		return nil, provider.ErrInvalidCredentials
@@ -125,21 +265,24 @@ func (a *Adapter) getCredentials(creds *domain.ProviderCredentials) (*Credential
 		CustomerCode: creds.CustomerCode,
 	}
 
-	// Check for extra fields
 	if c.CustomerCode == "" && creds.Extra != nil {
 		if code, ok := creds.Extra["customer_code"]; ok {
 			c.CustomerCode = code
 		}
 	}
 
-	if c.Username == "" || c.Password == "" || c.CustomerCode == "" {
+	if c.Username == "" || c.Password == "" {
 		return nil, provider.ErrInvalidCredentials
 	}
 
 	return c, nil
 }
 
-// VerifyCredentials validates the provided credentials with Aras API.
+// ---------------------------------------------------------------------------
+// VerifyCredentials — QueryType 33 (customer representatives).
+// If the call returns data without error, credentials are valid.
+// ---------------------------------------------------------------------------
+
 func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCredentials) (*provider.VerificationResult, error) {
 	c, err := a.getCredentials(&creds)
 	if err != nil {
@@ -149,410 +292,192 @@ func (a *Adapter) VerifyCredentials(ctx context.Context, creds domain.ProviderCr
 		}, nil
 	}
 
-	req := &VerifyCredentialsRequest{
-		UserName:     c.Username,
-		Password:     c.Password,
-		CustomerCode: c.CustomerCode,
-	}
-
-	var resp VerifyCredentialsResponse
-	if err := a.soapClient.Call(ctx, "VerifyCredentials", req, &resp); err != nil {
-		a.logger.Error("failed to verify credentials",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
+	result, err := a.callQuery(ctx, c, QueryTypeRepresentatives, nil)
+	if err != nil {
+		var provErr *provider.ProviderError
+		if isProviderError(err, &provErr) {
+			return &provider.VerificationResult{
+				Success: false,
+				Error:   provErr.Message,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to verify credentials: %w", err)
 	}
 
-	if !resp.Result.Success {
-		return &provider.VerificationResult{
-			Success: false,
-			Error:   resp.Result.ErrorMessage,
-		}, nil
-	}
-
+	_ = result // Success if no error
 	return &provider.VerificationResult{
 		Success: true,
 		AccountInfo: &provider.AccountInfo{
-			AccountNumber: resp.Result.AccountNumber,
-			CompanyName:   resp.Result.CompanyName,
-			ContractType:  resp.Result.ContractType,
+			AccountNumber: c.CustomerCode,
 		},
 	}, nil
 }
 
-// GetQuote retrieves shipping quotes from Aras.
-func (a *Adapter) GetQuote(ctx context.Context, req provider.QuoteRequest) (*provider.QuoteResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
+// ---------------------------------------------------------------------------
+// GetQuote — static contract pricing (KDV hariç / VAT excluded).
+// Aras has no pricing API; prices come from the fixed contract agreement.
+// ---------------------------------------------------------------------------
+
+// arasContractPrice returns the Aras contract price in kuruş (KDV hariç) for a given desi.
+func arasContractPrice(desi int) int64 {
+	if desi <= 0 {
+		desi = 1
+	}
+	switch {
+	case desi <= 1:
+		return 9129
+	case desi <= 2:
+		return 10117
+	case desi <= 3:
+		return 11313
+	case desi <= 4:
+		return 12559
+	case desi <= 5:
+		return 13768
+	case desi <= 10:
+		return 17596
+	case desi <= 15:
+		return 21788
+	case desi <= 20:
+		return 27645
+	case desi <= 25:
+		return 33522
+	case desi <= 30:
+		return 39119
+	default:
+		extra := desi - 30
+		return 39119 + int64(extra)*1099
+	}
+}
+
+func (a *Adapter) GetQuote(_ context.Context, req provider.QuoteRequest) (*provider.QuoteResponse, error) {
+	// Calculate desi: max(volumetric, weight_kg), rounded up
+	volumetric := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
+	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
+	desi := volumetric
+	if weightKg > desi {
+		desi = weightKg
+	}
+	desiInt := int(math.Ceil(desi))
+	if desiInt <= 0 {
+		desiInt = 1
 	}
 
-	// Parse city and district codes
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
-
-	// Calculate desi (volumetric weight)
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-
-	soapReq := &GetQuoteRequest{
-		UserName:         creds.Username,
-		Password:         creds.Password,
-		CustomerCode:     creds.CustomerCode,
-		SenderCityCode:   originCityCode,
-		SenderTownCode:   originDistrictCode,
-		ReceiverCityCode: destCityCode,
-		ReceiverTownCode: destDistrictCode,
-		Weight:           float64(req.Parcel.WeightGrams) / 1000.0, // Convert to kg
-		Desi:             desi,
-	}
-
-	if req.CODAmountKurus != nil {
-		soapReq.CODAmount = float64(*req.CODAmountKurus) / 100.0 // Convert to TRY
-	}
-	if req.DeclaredValueKurus != nil {
-		soapReq.DeclaredValue = float64(*req.DeclaredValueKurus) / 100.0
-	}
-	if req.ServiceCode != "" {
-		soapReq.ServiceType = MapServiceCode(req.ServiceCode)
-	}
-
-	var resp GetQuoteResponse
-	if err := a.soapClient.Call(ctx, "GetQuote", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get quote",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get quote: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return &provider.QuoteResponse{
-			Offers: []provider.ProviderOffer{},
-			Errors: []provider.ProviderError{
-				{
-					Code:            MapErrorCode(resp.Result.ErrorCode),
-					Message:         resp.Result.ErrorMessage,
-					ProviderCode:    resp.Result.ErrorCode,
-					ProviderMessage: resp.Result.ErrorMessage,
-					Retryable:       IsRetryableError(resp.Result.ErrorCode),
-				},
-			},
-		}, nil
-	}
-
-	offers := make([]provider.ProviderOffer, 0, len(resp.Result.Quotes))
-	for _, q := range resp.Result.Quotes {
-		expiresAt := time.Now().Add(QuoteValidityDuration)
-		if q.ValidUntil != "" {
-			if parsed, err := time.Parse(time.RFC3339, q.ValidUntil); err == nil {
-				expiresAt = parsed
-			}
-		}
-
-		offers = append(offers, provider.ProviderOffer{
-			ServiceCode:        strings.ToLower(q.ServiceCode),
-			ServiceName:        q.ServiceName,
-			BasePriceKurus:     int64(q.BasePrice * 100),
-			FuelSurchargeKurus: int64(q.FuelSurcharge * 100),
-			CODFeeKurus:        int64(q.CODFee * 100),
-			InsuranceFeeKurus:  int64(q.InsuranceFee * 100),
-			VATKurus:           int64(q.VAT * 100),
-			TotalPriceKurus:    int64(q.TotalPrice * 100),
-			EstimatedDaysMin:   q.EstimatedDaysMin,
-			EstimatedDaysMax:   q.EstimatedDaysMax,
-			ProviderQuoteID:    q.QuoteID,
-			ExpiresAt:          expiresAt,
-		})
-	}
+	basePriceKurus := arasContractPrice(desiInt)
+	vatKurus := basePriceKurus * 20 / 100
+	totalKurus := basePriceKurus + vatKurus
 
 	return &provider.QuoteResponse{
-		Offers: offers,
-	}, nil
-}
-
-// CreateShipment creates a new shipment with Aras.
-func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmentRequest) (*provider.CreateShipmentResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse city and district codes
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
-
-	// Calculate desi
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-
-	// Build address strings
-	originAddress := buildAddressString(req.Origin)
-	destAddress := buildAddressString(req.Destination)
-
-	soapReq := &CreateShipmentRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		Shipment: ShipmentDetails{
-			ServiceType:  MapServiceCode(req.ServiceCode),
-			QuoteID:      req.ProviderQuoteID,
-			Reference:    req.Reference,
-			LabelFormat:  MapLabelFormat(req.LabelFormat),
-			PaymentType:  PaymentTypeSender,
-			DeliveryType: DeliveryTypeDoor,
-			Sender: AddressDetails{
-				Name:       req.Origin.ContactName,
-				Phone:      formatPhone(req.Origin.Phone),
-				Email:      derefString(req.Origin.Email),
-				Address:    originAddress,
-				CityCode:   originCityCode,
-				TownCode:   originDistrictCode,
-				PostalCode: derefString(req.Origin.PostalCode),
-			},
-			Receiver: AddressDetails{
-				Name:       req.Destination.ContactName,
-				Phone:      formatPhone(req.Destination.Phone),
-				Email:      derefString(req.Destination.Email),
-				Address:    destAddress,
-				CityCode:   destCityCode,
-				TownCode:   destDistrictCode,
-				PostalCode: derefString(req.Destination.PostalCode),
-			},
-			Parcel: ParcelDetails{
-				PieceCount:  1,
-				Weight:      float64(req.Parcel.WeightGrams) / 1000.0,
-				Desi:        desi,
-				Length:      float64(req.Parcel.LengthCm),
-				Width:       float64(req.Parcel.WidthCm),
-				Height:      float64(req.Parcel.HeightCm),
-				Description: derefString(req.Parcel.Description),
+		Offers: []provider.ProviderOffer{
+			{
+				ServiceCode:    "standard",
+				ServiceName:    "Standart Kargo",
+				BasePriceKurus: basePriceKurus,
+				VATKurus:       vatKurus,
+				TotalPriceKurus: totalKurus,
+				EstimatedDaysMin: 2,
+				EstimatedDaysMax: 4,
+				ExpiresAt:        time.Now().Add(1 * time.Hour),
 			},
 		},
-	}
-
-	if req.Origin.CompanyName != nil && *req.Origin.CompanyName != "" {
-		soapReq.Shipment.Sender.CompanyName = *req.Origin.CompanyName
-	}
-	if req.Destination.CompanyName != nil && *req.Destination.CompanyName != "" {
-		soapReq.Shipment.Receiver.CompanyName = *req.Destination.CompanyName
-	}
-	if req.CODAmountKurus != nil {
-		soapReq.Shipment.CODAmount = float64(*req.CODAmountKurus) / 100.0
-	}
-	if req.DeclaredValueKurus != nil {
-		soapReq.Shipment.DeclaredValue = float64(*req.DeclaredValueKurus) / 100.0
-	}
-
-	var resp CreateShipmentResponse
-	if err := a.soapClient.Call(ctx, "CreateShipment", soapReq, &resp); err != nil {
-		a.logger.Error("failed to create shipment",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to create shipment: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	result := &provider.CreateShipmentResponse{
-		ProviderShipmentID: resp.Result.ShipmentID,
-		TrackingNumber:     resp.Result.TrackingNumber,
-		Barcode:            resp.Result.Barcode,
-	}
-
-	// Decode label if present
-	if resp.Result.LabelData != "" {
-		labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-		if err == nil {
-			result.Label = &provider.LabelData{
-				Format:      MapLabelFormatFromAras(resp.Result.LabelFormat),
-				Content:     labelBytes,
-				ContentType: MapContentType(resp.Result.LabelFormat),
-			}
-		}
-	}
-
-	return result, nil
-}
-
-// CancelShipment cancels an existing shipment.
-func (a *Adapter) CancelShipment(ctx context.Context, req provider.CancelShipmentRequest) (*provider.CancelShipmentResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	soapReq := &CancelShipmentRequest{
-		UserName:       creds.Username,
-		Password:       creds.Password,
-		CustomerCode:   creds.CustomerCode,
-		ShipmentID:     req.ProviderShipmentID,
-		TrackingNumber: req.TrackingNumber,
-		Reason:         req.Reason,
-	}
-
-	var resp CancelShipmentResponse
-	if err := a.soapClient.Call(ctx, "CancelShipment", soapReq, &resp); err != nil {
-		a.logger.Error("failed to cancel shipment",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to cancel shipment: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	var refundAmount *int64
-	if resp.Result.RefundAmount > 0 {
-		amount := int64(resp.Result.RefundAmount * 100)
-		refundAmount = &amount
-	}
-
-	return &provider.CancelShipmentResponse{
-		Success:           true,
-		RefundAmountKurus: refundAmount,
 	}, nil
 }
 
-// GetLabel retrieves the shipping label for a shipment.
-func (a *Adapter) GetLabel(ctx context.Context, req provider.GetLabelRequest) (*provider.GetLabelResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
+// ---------------------------------------------------------------------------
+// CreateShipment — uses SetDataXML (TODO: implement when format is confirmed)
+// ---------------------------------------------------------------------------
 
-	soapReq := &GetLabelRequest{
-		UserName:       creds.Username,
-		Password:       creds.Password,
-		CustomerCode:   creds.CustomerCode,
-		ShipmentID:     req.ProviderShipmentID,
-		TrackingNumber: req.TrackingNumber,
-		LabelFormat:    MapLabelFormat(req.Format),
-	}
-
-	var resp GetLabelResponse
-	if err := a.soapClient.Call(ctx, "GetLabel", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get label",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get label: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode label data: %w", err)
-	}
-
-	return &provider.GetLabelResponse{
-		Label: provider.LabelData{
-			Format:      MapLabelFormatFromAras(resp.Result.LabelFormat),
-			Content:     labelBytes,
-			ContentType: MapContentType(resp.Result.LabelFormat),
-		},
-	}, nil
+func (a *Adapter) CreateShipment(_ context.Context, _ provider.CreateShipmentRequest) (*provider.CreateShipmentResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
 }
 
-// GetTracking retrieves tracking information for a shipment.
+// ---------------------------------------------------------------------------
+// CancelShipment — not available via .svc integration service
+// ---------------------------------------------------------------------------
+
+func (a *Adapter) CancelShipment(_ context.Context, _ provider.CancelShipmentRequest) (*provider.CancelShipmentResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
+}
+
+// ---------------------------------------------------------------------------
+// GetLabel — not available via .svc integration service
+// ---------------------------------------------------------------------------
+
+func (a *Adapter) GetLabel(_ context.Context, _ provider.GetLabelRequest) (*provider.GetLabelResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
+}
+
+// ---------------------------------------------------------------------------
+// GetTracking — QueryType 9 (cargo movement by tracking number)
+// ---------------------------------------------------------------------------
+
 func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingRequest) (*provider.GetTrackingResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
-	soapReq := &GetTrackingRequest{
-		UserName:       creds.Username,
-		Password:       creds.Password,
-		CustomerCode:   creds.CustomerCode,
-		TrackingNumber: req.TrackingNumber,
-		ShipmentID:     req.ProviderShipmentID,
+	trackingNumber := req.TrackingNumber
+	if trackingNumber == "" {
+		trackingNumber = req.ProviderShipmentID
 	}
 
-	var resp GetTrackingResponse
-	if err := a.soapClient.Call(ctx, "GetTracking", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get tracking",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
+	result, err := a.callQuery(ctx, creds, QueryTypeCargoMovement, map[string]string{
+		"TrackingNumber": trackingNumber,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to get tracking: %w", err)
 	}
 
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
+	rows, err := extractRows(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tracking response: %w", err)
 	}
 
-	events := make([]provider.TrackingEventData, 0, len(resp.Result.Events))
-	for _, e := range resp.Result.Events {
-		occurredAt, _ := time.Parse(time.RFC3339, e.OccurredAt)
-		if occurredAt.IsZero() {
-			occurredAt, _ = time.Parse("2006-01-02T15:04:05", e.OccurredAt)
+	events := make([]provider.TrackingEventData, 0, len(rows))
+	var currentStatus domain.TrackingStatus
+
+	for _, row := range rows {
+		statusCode := getStr(row, "DURUM_KODU")
+		transferCode := getStr(row, "DEVIR_KODU")
+		status := MapStatusWithTransferCode(statusCode, transferCode)
+		currentStatus = status
+
+		occurredAt := parseArasDateTime(getStr(row, "ISLEM_TARIHI"))
+
+		rawData, _ := json.Marshal(row)
+
+		desc := getStr(row, "DURUM_ACIKLAMA")
+		if desc == "" {
+			desc = MapStatusDescription(statusCode)
 		}
 
-		rawData, _ := json.Marshal(e)
-
 		events = append(events, provider.TrackingEventData{
-			StatusCode:        MapStatus(e.StatusCode),
-			StatusDescription: MapStatusDescription(e.StatusCode),
-			LocationCity:      e.LocationCity,
-			LocationDetail:    e.LocationDetail,
+			StatusCode:        status,
+			StatusDescription: desc,
+			LocationCity:      getStr(row, "SUBE_ADI"),
+			LocationDetail:    getStr(row, "ISLEM_ACIKLAMA"),
 			OccurredAt:        occurredAt,
-			RawStatusCode:     e.StatusCode,
+			RawStatusCode:     statusCode,
 			RawData:           rawData,
 		})
 	}
 
-	result := &provider.GetTrackingResponse{
-		CurrentStatus: MapStatus(resp.Result.CurrentStatus),
+	if len(events) == 0 {
+		currentStatus = domain.TrackingStatusUnknown
+	}
+
+	return &provider.GetTrackingResponse{
+		CurrentStatus: currentStatus,
 		Events:        events,
-	}
-
-	if resp.Result.EstimatedDelivery != "" {
-		if estimated, err := time.Parse(time.RFC3339, resp.Result.EstimatedDelivery); err == nil {
-			result.EstimatedDelivery = &estimated
-		}
-	}
-
-	return result, nil
+	}, nil
 }
 
-// ParseTrackingWebhook parses an incoming tracking webhook payload.
-func (a *Adapter) ParseTrackingWebhook(ctx context.Context, payload []byte) ([]provider.TrackingWebhookEvent, error) {
+// ---------------------------------------------------------------------------
+// ParseTrackingWebhook — JSON-based webhook
+// ---------------------------------------------------------------------------
+
+func (a *Adapter) ParseTrackingWebhook(_ context.Context, payload []byte) ([]provider.TrackingWebhookEvent, error) {
 	var webhookPayload TrackingWebhookPayload
 	if err := json.Unmarshal(payload, &webhookPayload); err != nil {
 		return nil, fmt.Errorf("failed to parse webhook payload: %w", err)
@@ -581,266 +506,90 @@ func (a *Adapter) ParseTrackingWebhook(ctx context.Context, payload []byte) ([]p
 	}, nil
 }
 
-// SchedulePickup schedules a pickup for shipments.
-func (a *Adapter) SchedulePickup(ctx context.Context, req provider.SchedulePickupRequest) (*provider.SchedulePickupResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
+// ---------------------------------------------------------------------------
+// SchedulePickup — not supported
+// ---------------------------------------------------------------------------
 
-	cityCode, _ := strconv.Atoi(req.Address.CityCode)
-	districtCode, _ := strconv.Atoi(req.Address.DistrictCode)
-	address := buildAddressString(req.Address)
-
-	soapReq := &SchedulePickupRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		PickupAddress: AddressDetails{
-			Name:       req.Address.ContactName,
-			Phone:      formatPhone(req.Address.Phone),
-			Address:    address,
-			CityCode:   cityCode,
-			TownCode:   districtCode,
-			PostalCode: derefString(req.Address.PostalCode),
-		},
-		ScheduledDate:   req.ScheduledDate.Format("2006-01-02"),
-		TimeWindowStart: req.TimeWindowStart,
-		TimeWindowEnd:   req.TimeWindowEnd,
-		ParcelCount:     req.ParcelCount,
-		TotalWeight:     float64(req.TotalWeightGrams) / 1000.0,
-		TrackingNumbers: strings.Join(req.TrackingNumbers, ","),
-		Instructions:    req.Instructions,
-	}
-
-	var resp SchedulePickupResponse
-	if err := a.soapClient.Call(ctx, "SchedulePickup", soapReq, &resp); err != nil {
-		a.logger.Error("failed to schedule pickup",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to schedule pickup: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	confirmedDate, _ := time.Parse("2006-01-02", resp.Result.ConfirmedDate)
-
-	return &provider.SchedulePickupResponse{
-		PickupID:        resp.Result.PickupID,
-		ConfirmedDate:   confirmedDate,
-		TimeWindowStart: resp.Result.TimeWindowStart,
-		TimeWindowEnd:   resp.Result.TimeWindowEnd,
-	}, nil
+func (a *Adapter) SchedulePickup(_ context.Context, _ provider.SchedulePickupRequest) (*provider.SchedulePickupResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
 }
 
-// CancelPickup cancels a scheduled pickup.
-func (a *Adapter) CancelPickup(ctx context.Context, req provider.CancelPickupRequest) (*provider.CancelPickupResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
+// ---------------------------------------------------------------------------
+// CancelPickup — not supported
+// ---------------------------------------------------------------------------
 
-	soapReq := &CancelPickupRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		PickupID:     req.PickupID,
-		Reason:       req.Reason,
-	}
-
-	var resp CancelPickupResponse
-	if err := a.soapClient.Call(ctx, "CancelPickup", soapReq, &resp); err != nil {
-		a.logger.Error("failed to cancel pickup",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to cancel pickup: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	return &provider.CancelPickupResponse{
-		Success: true,
-	}, nil
+func (a *Adapter) CancelPickup(_ context.Context, _ provider.CancelPickupRequest) (*provider.CancelPickupResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
 }
 
-// CreateReturn creates a return shipment.
-func (a *Adapter) CreateReturn(ctx context.Context, req provider.CreateReturnRequest) (*provider.CreateReturnResponse, error) {
-	creds, err := a.getCredentials(req.Credentials)
-	if err != nil {
-		return nil, err
-	}
+// ---------------------------------------------------------------------------
+// CreateReturn — not supported
+// ---------------------------------------------------------------------------
 
-	// Parse city and district codes (swapped for return)
-	originCityCode, _ := strconv.Atoi(req.Origin.CityCode)
-	originDistrictCode, _ := strconv.Atoi(req.Origin.DistrictCode)
-	destCityCode, _ := strconv.Atoi(req.Destination.CityCode)
-	destDistrictCode, _ := strconv.Atoi(req.Destination.DistrictCode)
-
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
-	originAddress := buildAddressString(req.Origin)
-	destAddress := buildAddressString(req.Destination)
-
-	soapReq := &CreateReturnRequest{
-		UserName:               creds.Username,
-		Password:               creds.Password,
-		CustomerCode:           creds.CustomerCode,
-		OriginalTrackingNumber: req.OriginalTrackingNumber,
-		OriginalShipmentID:     req.OriginalProviderShipmentID,
-		Shipment: ShipmentDetails{
-			ServiceType:  MapServiceCode(req.ServiceCode),
-			Reference:    req.Reference,
-			LabelFormat:  MapLabelFormat(req.LabelFormat),
-			PaymentType:  PaymentTypeSender,
-			DeliveryType: DeliveryTypeDoor,
-			Sender: AddressDetails{
-				Name:       req.Origin.ContactName,
-				Phone:      formatPhone(req.Origin.Phone),
-				Address:    originAddress,
-				CityCode:   originCityCode,
-				TownCode:   originDistrictCode,
-				PostalCode: derefString(req.Origin.PostalCode),
-			},
-			Receiver: AddressDetails{
-				Name:       req.Destination.ContactName,
-				Phone:      formatPhone(req.Destination.Phone),
-				Address:    destAddress,
-				CityCode:   destCityCode,
-				TownCode:   destDistrictCode,
-				PostalCode: derefString(req.Destination.PostalCode),
-			},
-			Parcel: ParcelDetails{
-				PieceCount:  1,
-				Weight:      float64(req.Parcel.WeightGrams) / 1000.0,
-				Desi:        desi,
-				Length:      float64(req.Parcel.LengthCm),
-				Width:       float64(req.Parcel.WidthCm),
-				Height:      float64(req.Parcel.HeightCm),
-				Description: derefString(req.Parcel.Description),
-			},
-		},
-	}
-
-	var resp CreateReturnResponse
-	if err := a.soapClient.Call(ctx, "CreateReturn", soapReq, &resp); err != nil {
-		a.logger.Error("failed to create return",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to create return: %w", err)
-	}
-
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
-
-	result := &provider.CreateReturnResponse{
-		ProviderShipmentID: resp.Result.ShipmentID,
-		TrackingNumber:     resp.Result.TrackingNumber,
-		Barcode:            resp.Result.Barcode,
-	}
-
-	if resp.Result.LabelData != "" {
-		labelBytes, err := base64.StdEncoding.DecodeString(resp.Result.LabelData)
-		if err == nil {
-			result.Label = &provider.LabelData{
-				Format:      MapLabelFormatFromAras(resp.Result.LabelFormat),
-				Content:     labelBytes,
-				ContentType: MapContentType(resp.Result.LabelFormat),
-			}
-		}
-	}
-
-	return result, nil
+func (a *Adapter) CreateReturn(_ context.Context, _ provider.CreateReturnRequest) (*provider.CreateReturnResponse, error) {
+	return nil, provider.ErrUnsupportedOperation
 }
 
-// GetDropoffPoints retrieves available dropoff points.
+// ---------------------------------------------------------------------------
+// GetDropoffPoints — QueryType 10 (all branches)
+// ---------------------------------------------------------------------------
+
 func (a *Adapter) GetDropoffPoints(ctx context.Context, req provider.GetDropoffPointsRequest) (*provider.GetDropoffPointsResponse, error) {
 	creds, err := a.getCredentials(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
-	cityCode, _ := strconv.Atoi(req.CityCode)
-	districtCode, _ := strconv.Atoi(req.DistrictCode)
-
-	soapReq := &GetDropoffPointsRequest{
-		UserName:     creds.Username,
-		Password:     creds.Password,
-		CustomerCode: creds.CustomerCode,
-		CityCode:     cityCode,
-		TownCode:     districtCode,
-		PostalCode:   req.PostalCode,
-		Limit:        req.Limit,
+	result, err := a.callQuery(ctx, creds, QueryTypeAllBranches, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get branches: %w", err)
 	}
 
-	var resp GetDropoffPointsResponse
-	if err := a.soapClient.Call(ctx, "GetDropoffPoints", soapReq, &resp); err != nil {
-		a.logger.Error("failed to get dropoff points",
-			slog.String("provider", string(ProviderCode)),
-			slog.String("error", err.Error()),
-		)
-		return nil, fmt.Errorf("failed to get dropoff points: %w", err)
+	rows, err := extractRows(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse branch list: %w", err)
 	}
 
-	if !resp.Result.Success {
-		return nil, &provider.ProviderError{
-			Code:            MapErrorCode(resp.Result.ErrorCode),
-			Message:         resp.Result.ErrorMessage,
-			ProviderCode:    resp.Result.ErrorCode,
-			ProviderMessage: resp.Result.ErrorMessage,
-			Retryable:       IsRetryableError(resp.Result.ErrorCode),
-		}
-	}
+	points := make([]provider.DropoffPoint, 0, len(rows))
+	for _, row := range rows {
+		cityCode := getStr(row, "IL_KODU")
+		districtCode := getStr(row, "ILCE_KODU")
 
-	points := make([]provider.DropoffPoint, 0, len(resp.Result.Points))
-	for _, p := range resp.Result.Points {
-		var lat, lng *float64
-		if p.Latitude != 0 {
-			lat = &p.Latitude
+		if req.CityCode != "" && cityCode != req.CityCode {
+			continue
 		}
-		if p.Longitude != 0 {
-			lng = &p.Longitude
+		if req.DistrictCode != "" && districtCode != req.DistrictCode {
+			continue
 		}
 
-		points = append(points, provider.DropoffPoint{
-			ID:           p.ID,
-			Name:         p.Name,
-			Address:      p.Address,
-			CityCode:     strconv.Itoa(p.CityCode),
-			CityName:     p.CityName,
-			DistrictCode: strconv.Itoa(p.TownCode),
-			DistrictName: p.TownName,
-			PostalCode:   p.PostalCode,
-			Latitude:     lat,
-			Longitude:    lng,
-			Phone:        p.Phone,
-			WorkingHours: p.WorkingHours,
-			IsActive:     p.IsActive,
-		})
+		point := provider.DropoffPoint{
+			ID:           getStr(row, "SUBE_KODU"),
+			Name:         getStr(row, "SUBE_ADI"),
+			Address:      getStr(row, "SUBE_ADRESI"),
+			CityCode:     cityCode,
+			DistrictCode: districtCode,
+			DistrictName: getStr(row, "ILCE"),
+			Phone:        getStr(row, "TELEFON"),
+			IsActive:     true,
+		}
+
+		if coord := getStr(row, "KORDINAT"); coord != "" {
+			parts := strings.SplitN(coord, ",", 2)
+			if len(parts) == 2 {
+				if lat := parseFloat(parts[0]); lat != 0 {
+					point.Latitude = &lat
+				}
+				if lng := parseFloat(parts[1]); lng != 0 {
+					point.Longitude = &lng
+				}
+			}
+		}
+
+		points = append(points, point)
+
+		if req.Limit > 0 && len(points) >= req.Limit {
+			break
+		}
 	}
 
 	return &provider.GetDropoffPointsResponse{
@@ -848,41 +597,63 @@ func (a *Adapter) GetDropoffPoints(ctx context.Context, req provider.GetDropoffP
 	}, nil
 }
 
+// ===========================================================================
 // Helper functions
+// ===========================================================================
 
-// buildAddressString builds a full address string from an AddressSnapshot.
-func buildAddressString(addr domain.AddressSnapshot) string {
-	parts := []string{addr.StreetLine1}
-	if addr.StreetLine2 != nil && *addr.StreetLine2 != "" {
-		parts = append(parts, *addr.StreetLine2)
+// parseFloat parses a string to float64, returning 0 on error.
+func parseFloat(s string) float64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
 	}
-	if addr.Neighborhood != "" {
-		parts = append(parts, addr.Neighborhood)
-	}
-	return strings.Join(parts, " ")
+	s = strings.ReplaceAll(s, ",", ".")
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
 }
 
-// formatPhone formats a phone number for Aras (removes +90 prefix).
-func formatPhone(phone string) string {
-	phone = strings.TrimSpace(phone)
-	phone = strings.ReplaceAll(phone, " ", "")
-	phone = strings.ReplaceAll(phone, "-", "")
-
-	if strings.HasPrefix(phone, "+90") {
-		phone = "0" + phone[3:]
-	} else if strings.HasPrefix(phone, "90") && len(phone) == 12 {
-		phone = "0" + phone[2:]
+// parseArasDateTime parses Aras date/time strings in common formats.
+func parseArasDateTime(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
 	}
 
-	return phone
+	formats := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"02.01.2006 15:04:05",
+		"02.01.2006 15:04",
+		"02-01-2006 15:04:05",
+		"2006-01-02",
+		time.RFC3339,
+	}
+
+	loc, _ := time.LoadLocation("Europe/Istanbul")
+	if loc == nil {
+		loc = time.UTC
+	}
+
+	for _, f := range formats {
+		if t, err := time.ParseInLocation(f, s, loc); err == nil {
+			return t
+		}
+	}
+
+	return time.Time{}
 }
 
-// derefString safely dereferences a string pointer.
-func derefString(s *string) string {
-	if s == nil {
-		return ""
+// isProviderError checks if err is a *provider.ProviderError and sets target.
+func isProviderError(err error, target **provider.ProviderError) bool {
+	if err == nil {
+		return false
 	}
-	return *s
+	pe, ok := err.(*provider.ProviderError)
+	if ok {
+		*target = pe
+		return true
+	}
+	return false
 }
 
 // init registers the adapter with the global factory.

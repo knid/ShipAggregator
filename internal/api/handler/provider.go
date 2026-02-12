@@ -45,7 +45,7 @@ func (h *ProviderHandler) ListProviders(w http.ResponseWriter, r *http.Request) 
 		isActive = &active
 	}
 
-	providers, err := h.queries.ListProviders(ctx, isActive)
+	providers, err := h.queries.ListProvidersEnriched(ctx, isActive)
 	if err != nil {
 		h.logger.Error("Failed to list providers", "error", err)
 		WriteError(w, r, NewInternalError("Failed to list providers"))
@@ -54,7 +54,7 @@ func (h *ProviderHandler) ListProviders(w http.ResponseWriter, r *http.Request) 
 
 	response := make([]ProviderResponse, len(providers))
 	for i, p := range providers {
-		response[i] = providerToResponse(p)
+		response[i] = enrichedProviderToResponse(p)
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -413,15 +413,17 @@ func getDropoffPointsForProvider(providerCode, city, district, lat, lng, radius 
 
 // ProviderResponse represents a provider in API responses.
 type ProviderResponse struct {
-	Code         string          `json:"code"`
-	Name         string          `json:"name"`
-	LogoURL      *string         `json:"logo_url,omitempty"`
-	Website      *string         `json:"website,omitempty"`
-	SupportEmail *string         `json:"support_email,omitempty"`
-	SupportPhone *string         `json:"support_phone,omitempty"`
-	APIType      string          `json:"api_type"`
-	IsActive     bool            `json:"is_active"`
-	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+	Code               string          `json:"code"`
+	Name               string          `json:"name"`
+	LogoURL            *string         `json:"logo_url,omitempty"`
+	Website            *string         `json:"website,omitempty"`
+	SupportEmail       *string         `json:"support_email,omitempty"`
+	SupportPhone       *string         `json:"support_phone,omitempty"`
+	APIType            string          `json:"api_type"`
+	IsActive           bool            `json:"is_active"`
+	Capabilities       json.RawMessage `json:"capabilities,omitempty"`
+	MarketplaceEnabled bool            `json:"marketplace_enabled"`
+	BYOAEnabled        bool            `json:"byoa_enabled"`
 }
 
 // ProviderWithServicesResponse represents a provider with its services.
@@ -501,15 +503,33 @@ type DropoffPointResponse struct {
 
 func providerToResponse(p *db.Provider) ProviderResponse {
 	return ProviderResponse{
-		Code:         p.Code,
-		Name:         p.Name,
-		LogoURL:      p.LogoUrl,
-		Website:      p.Website,
-		SupportEmail: p.SupportEmail,
-		SupportPhone: p.SupportPhone,
-		APIType:      p.ApiType,
-		IsActive:     p.IsActive,
-		Capabilities: p.Capabilities,
+		Code:               p.Code,
+		Name:               p.Name,
+		LogoURL:            p.LogoUrl,
+		Website:            p.Website,
+		SupportEmail:       p.SupportEmail,
+		SupportPhone:       p.SupportPhone,
+		APIType:            p.ApiType,
+		IsActive:           p.IsActive,
+		Capabilities:       p.Capabilities,
+		MarketplaceEnabled: true,
+		BYOAEnabled:        true,
+	}
+}
+
+func enrichedProviderToResponse(p *db.ListProvidersEnrichedRow) ProviderResponse {
+	return ProviderResponse{
+		Code:               p.Code,
+		Name:               p.Name,
+		LogoURL:            p.LogoUrl,
+		Website:            p.Website,
+		SupportEmail:       p.SupportEmail,
+		SupportPhone:       p.SupportPhone,
+		APIType:            p.ApiType,
+		IsActive:           p.IsActive,
+		Capabilities:       p.Capabilities,
+		MarketplaceEnabled: p.MarketplaceEnabled,
+		BYOAEnabled:        true,
 	}
 }
 

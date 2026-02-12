@@ -126,6 +126,7 @@ type Querier interface {
 	// Table: audit_logs
 	GetAuditLogByID(ctx context.Context, id uuid.UUID) (*AuditLog, error)
 	GetAuditLogSummaryByOrganization(ctx context.Context, arg GetAuditLogSummaryByOrganizationParams) ([]*GetAuditLogSummaryByOrganizationRow, error)
+	GetBillingStats(ctx context.Context, arg GetBillingStatsParams) (*GetBillingStatsRow, error)
 	GetCODSettlementByCarrierID(ctx context.Context, arg GetCODSettlementByCarrierIDParams) (*CodSettlement, error)
 	// COD Settlements CRUD queries
 	// Table: cod_settlements
@@ -196,6 +197,7 @@ type Querier interface {
 	// Table: outbox
 	GetOutboxMessageByID(ctx context.Context, id uuid.UUID) (*Outbox, error)
 	GetOutboxStats(ctx context.Context) (*GetOutboxStatsRow, error)
+	GetPendingCODTotal(ctx context.Context, organizationID uuid.UUID) (int64, error)
 	// ============================================================================
 	// POSTAL CODES
 	// ============================================================================
@@ -238,6 +240,10 @@ type Querier interface {
 	GetShipmentByIdempotencyKey(ctx context.Context, arg GetShipmentByIdempotencyKeyParams) (*Shipment, error)
 	GetShipmentByTrackingNumber(ctx context.Context, arg GetShipmentByTrackingNumberParams) (*Shipment, error)
 	GetShipmentForUpdate(ctx context.Context, id uuid.UUID) (*Shipment, error)
+	// Stats queries for dashboard statistics
+	// These queries aggregate data for the dashboard overview
+	GetShipmentStats(ctx context.Context, arg GetShipmentStatsParams) (*GetShipmentStatsRow, error)
+	GetShipmentStatsByProvider(ctx context.Context, arg GetShipmentStatsByProviderParams) ([]*GetShipmentStatsByProviderRow, error)
 	GetSystemRoleByName(ctx context.Context, name string) (*Role, error)
 	// Topups CRUD queries
 	// Table: topups
@@ -324,6 +330,7 @@ type Querier interface {
 	ListProviderServicesWithCOD(ctx context.Context, providerCode string) ([]*ProviderService, error)
 	ListProviderServicesWithReturn(ctx context.Context, providerCode string) ([]*ProviderService, error)
 	ListProviders(ctx context.Context, isActive *bool) ([]*Provider, error)
+	ListProvidersEnriched(ctx context.Context, isActive *bool) ([]*ListProvidersEnrichedRow, error)
 	ListPublishedOutboxMessages(ctx context.Context, arg ListPublishedOutboxMessagesParams) ([]*Outbox, error)
 	ListQuotesByOrganization(ctx context.Context, arg ListQuotesByOrganizationParams) ([]*Quote, error)
 	ListRolesByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]*Role, error)
