@@ -345,6 +345,7 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 		order.TtCollectionType = "0" // Cash
 		order.TtInvoiceAmount = fmt.Sprintf("%.2f", float64(*req.CODAmountKurus)/100.0)
 		order.TtDocumentId = cargoKey
+		order.TtDocumentSaveType = "0" // Same invoice (required when ttCollectionType=0)
 	}
 
 	soapReq := &CreateShipmentRequest{
@@ -572,32 +573,37 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 	// Map current status from operationStatus
 	currentStatus := MapOperationStatus(detail.OperationStatus)
 
-	// Build events from historical tracking data
-	events := make([]provider.TrackingEventData, 0, len(detail.InvDocCargoVOArray))
-	for _, evt := range detail.InvDocCargoVOArray {
-		occurredAt := parseYurticiDateTime(evt.EventDate, evt.EventTime)
+	// Build events from the nested item detail (contains tracking history)
+	var events []provider.TrackingEventData
+	itemDetail := detail.ShippingDeliveryItemDetailVO
 
-		rawData, _ := json.Marshal(evt)
+	if itemDetail != nil {
+		events = make([]provider.TrackingEventData, 0, len(itemDetail.InvDocCargoVOArray))
+		for _, evt := range itemDetail.InvDocCargoVOArray {
+			occurredAt := parseYurticiDateTime(evt.EventDate, evt.EventTime)
 
-		location := evt.CityName
-		locationDetail := evt.TownName
-		if evt.UnitName != "" {
-			if locationDetail != "" {
-				locationDetail = locationDetail + " - " + evt.UnitName
-			} else {
-				locationDetail = evt.UnitName
+			rawData, _ := json.Marshal(evt)
+
+			location := evt.CityName
+			locationDetail := evt.TownName
+			if evt.UnitName != "" {
+				if locationDetail != "" {
+					locationDetail = locationDetail + " - " + evt.UnitName
+				} else {
+					locationDetail = evt.UnitName
+				}
 			}
-		}
 
-		events = append(events, provider.TrackingEventData{
-			StatusCode:        MapEventId(evt.EventId),
-			StatusDescription: MapEventDescription(evt.EventId, evt.EventName),
-			LocationCity:      location,
-			LocationDetail:    locationDetail,
-			OccurredAt:        occurredAt,
-			RawStatusCode:     evt.EventId,
-			RawData:           rawData,
-		})
+			events = append(events, provider.TrackingEventData{
+				StatusCode:        MapEventId(evt.EventId),
+				StatusDescription: MapEventDescription(evt.EventId, evt.EventName),
+				LocationCity:      location,
+				LocationDetail:    locationDetail,
+				OccurredAt:        occurredAt,
+				RawStatusCode:     evt.EventId,
+				RawData:           rawData,
+			})
+		}
 	}
 
 	// If no historical events but we have a status, add a synthetic event
@@ -617,9 +623,9 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 		Events:        events,
 	}
 
-	// Parse delivery date if present
-	if detail.DeliveryDate != "" {
-		if delivered := parseYurticiDateTime(detail.DeliveryDate, detail.DeliveryTime); !delivered.IsZero() {
+	// Parse delivery date from nested item detail if present
+	if itemDetail != nil && itemDetail.DeliveryDate != "" {
+		if delivered := parseYurticiDateTime(itemDetail.DeliveryDate, itemDetail.DeliveryTime); !delivered.IsZero() {
 			result.EstimatedDelivery = &delivered
 		}
 	}
@@ -745,16 +751,22 @@ func buildAddressString(addr domain.AddressSnapshot) string {
 	return strings.Join(parts, " ")
 }
 
-// formatPhone formats a phone number for Yurtici (10 digits with area code).
+// formatPhone formats a phone number for Yurtici (10 digits with area code, no leading 0).
+// Doc: "Alan kodu ile birlikte 10 adet rakamdan oluşmalıdır" — e.g. 5321234567.
 func formatPhone(phone string) string {
 	phone = strings.TrimSpace(phone)
 	phone = strings.ReplaceAll(phone, " ", "")
 	phone = strings.ReplaceAll(phone, "-", "")
 
 	if strings.HasPrefix(phone, "+90") {
-		phone = "0" + phone[3:]
+		phone = phone[3:] // +905321234567 → 5321234567
 	} else if strings.HasPrefix(phone, "90") && len(phone) == 12 {
-		phone = "0" + phone[2:]
+		phone = phone[2:] // 905321234567 → 5321234567
+	}
+
+	// Strip leading 0 if present (05321234567 → 5321234567)
+	if strings.HasPrefix(phone, "0") && len(phone) == 11 {
+		phone = phone[1:]
 	}
 
 	return phone

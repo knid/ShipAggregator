@@ -15,6 +15,7 @@ import (
 	"github.com/knid/kargonet/internal/api/middleware"
 	"github.com/knid/kargonet/internal/domain"
 	"github.com/knid/kargonet/internal/observability"
+	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	"github.com/knid/kargonet/internal/service/shipment"
 	"github.com/knid/kargonet/internal/service/tracking"
@@ -813,13 +814,31 @@ func (h *ShipmentHandler) handleShipmentError(w http.ResponseWriter, r *http.Req
 	case errors.Is(err, shipment.ErrInvalidShipmentStatus):
 		WriteError(w, r, NewConflictError("Shipment cannot be modified in its current status"))
 	case errors.Is(err, shipment.ErrProviderError):
-		WriteError(w, r, &ProblemDetails{
+		pd := &ProblemDetails{
 			Type:   ErrorTypeProviderError,
 			Title:  "Provider Error",
 			Status: http.StatusBadGateway,
-			Detail: "An error occurred while communicating with the shipping provider",
 			Code:   CodeProviderError,
-		})
+		}
+		// Extract provider error detail if available
+		var provErr *provider.ProviderError
+		if errors.As(err, &provErr) {
+			pd.Detail = provErr.Message
+			pd.Extensions = map[string]interface{}{
+				"provider_code":    provErr.ProviderCode,
+				"provider_message": provErr.ProviderMessage,
+				"retryable":        provErr.Retryable,
+			}
+		} else {
+			// Unwrap the sentinel to get the underlying error message
+			inner := errors.Unwrap(err)
+			if inner != nil {
+				pd.Detail = inner.Error()
+			} else {
+				pd.Detail = err.Error()
+			}
+		}
+		WriteError(w, r, pd)
 	default:
 		h.logger.Error("Shipment operation failed", "error", err)
 		WriteError(w, r, NewInternalError("Failed to process shipment operation"))

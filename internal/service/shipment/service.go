@@ -38,6 +38,7 @@ var (
 type Service struct {
 	queries        *db.Queries
 	adapterPool    *provider.AdapterPool
+	platformCreds  map[domain.ProviderCode]*domain.ProviderCredentials
 	ledgerService  *billing.LedgerService
 	walletService  *billing.WalletService
 	codService     *billing.CODService
@@ -49,6 +50,7 @@ type Service struct {
 func NewService(
 	queries *db.Queries,
 	adapterPool *provider.AdapterPool,
+	platformCreds map[domain.ProviderCode]*domain.ProviderCredentials,
 	ledgerService *billing.LedgerService,
 	walletService *billing.WalletService,
 	logger *observability.Logger,
@@ -56,6 +58,7 @@ func NewService(
 	return &Service{
 		queries:       queries,
 		adapterPool:   adapterPool,
+		platformCreds: platformCreds,
 		ledgerService: ledgerService,
 		walletService: walletService,
 		logger:        logger,
@@ -66,6 +69,7 @@ func NewService(
 func NewServiceWithBYOA(
 	queries *db.Queries,
 	adapterPool *provider.AdapterPool,
+	platformCreds map[domain.ProviderCode]*domain.ProviderCredentials,
 	ledgerService *billing.LedgerService,
 	walletService *billing.WalletService,
 	accountService *providerservice.AccountService,
@@ -74,6 +78,7 @@ func NewServiceWithBYOA(
 	return &Service{
 		queries:        queries,
 		adapterPool:    adapterPool,
+		platformCreds:  platformCreds,
 		ledgerService:  ledgerService,
 		walletService:  walletService,
 		accountService: accountService,
@@ -85,6 +90,7 @@ func NewServiceWithBYOA(
 func NewServiceWithCOD(
 	queries *db.Queries,
 	adapterPool *provider.AdapterPool,
+	platformCreds map[domain.ProviderCode]*domain.ProviderCredentials,
 	ledgerService *billing.LedgerService,
 	walletService *billing.WalletService,
 	codService *billing.CODService,
@@ -94,6 +100,7 @@ func NewServiceWithCOD(
 	return &Service{
 		queries:        queries,
 		adapterPool:    adapterPool,
+		platformCreds:  platformCreds,
 		ledgerService:  ledgerService,
 		walletService:  walletService,
 		codService:     codService,
@@ -315,6 +322,13 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		LabelFormat:        req.LabelFormat,
 	}
 
+	// For marketplace shipments, use platform credentials
+	if !isBYOA {
+		if creds, ok := s.platformCreds[providerCode]; ok {
+			createReq.Credentials = creds
+		}
+	}
+
 	// For BYOA shipments, get and use customer credentials
 	if isBYOA && s.accountService != nil {
 		// Get provider account
@@ -352,7 +366,7 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 			"provider_code", shipment.ProviderCode,
 			"is_byoa", isBYOA,
 		)
-		return nil, fmt.Errorf("%w: %v", ErrProviderError, err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderError, err)
 	}
 
 	// Store label document
@@ -641,11 +655,27 @@ func (s *Service) Cancel(ctx context.Context, req *CancelRequest) (*db.Shipment,
 		providerCode := domain.ProviderCode(shipment.ProviderCode)
 		adapter, err := s.adapterPool.Get(providerCode)
 		if err == nil {
-			_, cancelErr := adapter.CancelShipment(ctx, provider.CancelShipmentRequest{
+			cancelReq := provider.CancelShipmentRequest{
 				ProviderShipmentID: *shipment.ProviderShipmentID,
 				TrackingNumber:     *shipment.ProviderTrackingNumber,
 				Reason:             req.Reason,
-			})
+			}
+			// Set credentials: BYOA uses customer creds, marketplace uses platform creds
+			isBYOACancellation := !shipment.IsMarketplace && shipment.ProviderAccountID.Valid
+			if !isBYOACancellation {
+				if creds, ok := s.platformCreds[providerCode]; ok {
+					cancelReq.Credentials = creds
+				}
+			} else if s.accountService != nil {
+				account, accErr := s.accountService.GetAccount(ctx, shipment.ProviderAccountID.Bytes, req.OrganizationID)
+				if accErr == nil {
+					creds, decErr := s.accountService.DecryptCredentials(ctx, account)
+					if decErr == nil {
+						cancelReq.Credentials = creds
+					}
+				}
+			}
+			_, cancelErr := adapter.CancelShipment(ctx, cancelReq)
 			if cancelErr != nil {
 				s.logger.Error("Failed to cancel shipment with provider",
 					"error", cancelErr,
@@ -957,6 +987,13 @@ func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelReq
 		createReturnReq.OriginalProviderShipmentID = *originalShipment.ProviderShipmentID
 	}
 
+	// For marketplace shipments, use platform credentials
+	if !isBYOA {
+		if creds, ok := s.platformCreds[providerCode]; ok {
+			createReturnReq.Credentials = creds
+		}
+	}
+
 	// For BYOA shipments, get and use customer credentials
 	if isBYOA && s.accountService != nil {
 		account, err := s.accountService.GetAccount(ctx, returnShipment.ProviderAccountID.Bytes, req.OrganizationID)
@@ -989,7 +1026,7 @@ func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelReq
 			"original_shipment_id", originalShipment.ID,
 			"provider_code", returnShipment.ProviderCode,
 		)
-		return nil, fmt.Errorf("%w: %v", ErrProviderError, err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderError, err)
 	}
 
 	// Store label document

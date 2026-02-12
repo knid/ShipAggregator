@@ -65,8 +65,9 @@ type ShippingOrderVO struct {
 }
 
 // CreateShipmentResponse is the SOAP response for createShipment.
+// Note: XMLName is intentionally omitted — the SOAP client uses xml:",any" on
+// ResponseBody.Content, and the actual element name is <ns1:dispatchResponse>.
 type CreateShipmentResponse struct {
-	XMLName xml.Name                `xml:"createShipmentResponse"`
 	Result  ShippingOrderResultVO   `xml:"ShippingOrderResultVO"`
 }
 
@@ -100,8 +101,8 @@ type CancelShipmentRequest struct {
 }
 
 // CancelShipmentResponse is the SOAP response for cancelShipment.
+// Note: XMLName omitted — actual element is <ns1:cancelResponse>.
 type CancelShipmentResponse struct {
-	XMLName xml.Name                      `xml:"cancelShipmentResponse"`
 	Result  CancelShipmentResultVO        `xml:"ShippingOrderResultVO"`
 }
 
@@ -141,8 +142,8 @@ type QueryShipmentRequest struct {
 }
 
 // QueryShipmentResponse is the SOAP response for queryShipment.
+// Note: XMLName omitted — actual element is <ns1:queryShipmentResponse>.
 type QueryShipmentResponse struct {
-	XMLName xml.Name              `xml:"queryShipmentResponse"`
 	Result  ShippingDeliveryVO    `xml:"ShippingDeliveryVO"`
 }
 
@@ -155,6 +156,7 @@ type ShippingDeliveryVO struct {
 }
 
 // ShippingDeliveryDetailVO contains per-item delivery details from queryShipment.
+// The detailed shipment data lives in the nested ShippingDeliveryItemDetailVO child element.
 type ShippingDeliveryDetailVO struct {
 	// Identification
 	CargoKey   string `xml:"cargoKey"`
@@ -162,39 +164,74 @@ type ShippingDeliveryDetailVO struct {
 	DocId      string `xml:"docId"`
 	JobId      string `xml:"jobId"`
 
-	// Operation status
+	// Operation status (at the detail level)
 	OperationCode    string `xml:"operationCode"`    // 0=NOP, 1=IND, 2=ISR, 3=CNL, 4=ISC, 5=DLV, 6=BI
 	OperationMessage string `xml:"operationMessage"`
 	OperationStatus  string `xml:"operationStatus"`  // NOP, IND, ISR, CNL, ISC, DLV, BI
 
+	// Error info (at the detail level)
+	ErrCode    string `xml:"errCode"`
+	ErrMessage string `xml:"errMessage"`
+
+	// Nested child with all shipment detail data
+	ShippingDeliveryItemDetailVO *ShippingDeliveryItemDetailVO `xml:"shippingDeliveryItemDetailVO,omitempty"`
+}
+
+// ShippingDeliveryItemDetailVO contains the nested shipment detail fields
+// inside shippingDeliveryDetailVO from queryShipment responses.
+type ShippingDeliveryItemDetailVO struct {
 	// Receiver info
-	ReceiverName    string `xml:"receiverName"`
-	ReceiverAddress string `xml:"receiverAddress"`
-	ReceiverPhone   string `xml:"receiverPhone"`
-	CityName        string `xml:"cityName"`
-	TownName        string `xml:"townName"`
+	ReceiverCustName string `xml:"receiverCustName"`
+	ReceiverAddressTxt string `xml:"receiverAddressTxt"`
+	ReceiverPhone    string `xml:"receiverPhone"`
+	ReceiverInfo     string `xml:"receiverInfo"` // who received the delivery
+	CityName         string `xml:"cityName"`
+	TownName         string `xml:"townName"`
 
 	// Delivery info
-	DeliveryDate      string `xml:"deliveryDate"`
-	DeliveryTime      string `xml:"deliveryTime"`
-	DeliveredTo       string `xml:"deliveredTo"`
+	DeliveryDate      string `xml:"deliveryDate"`      // YYYYMMDD
+	DeliveryTime      string `xml:"deliveryTime"`      // HHMMSS
+	DeliveryType      string `xml:"deliveryType"`
 	DeliveredUnitName string `xml:"deliveredUnitName"`
 	DeliveredUnitId   string `xml:"deliveredUnitId"`
 
+	// Departure / arrival unit info
+	DepartureUnitName string `xml:"departureUnitName"`
+	DepartureUnitId   string `xml:"departureUnitId"`
+	ArrivalUnitName   string `xml:"arrivalUnitName"`
+	ArrivalUnitId     string `xml:"arrivalUnitId"`
+
 	// Return info
-	ReturnDocId       string `xml:"returnDocId"`
-	ReturnOperationCode string `xml:"returnOperationCode"`
-	ReturnOperationStatus string `xml:"returnOperationStatus"`
+	ReturnDocId              string `xml:"returnDocId"`
+	ReturnStatus             string `xml:"returnStatus"`
+	ReturnStatusExplanation  string `xml:"returnStatusExplanation"`
+	ReturnDeliveryDate       string `xml:"returnDeliveryDate"`
+	ReturnDocumentDate       string `xml:"returnDocumentDate"`
 
-	// Pricing
-	Desi          string `xml:"desi"`
-	Kg            string `xml:"kg"`
-	CargoCount    string `xml:"cargoCount"`
+	// Reject info
+	RejectStatus             string `xml:"rejectStatus"`
+	RejectStatusExplanation  string `xml:"rejectStatusExplanation"`
+	RejectDescription        string `xml:"rejectDescription"`
+	RejectReasonExplanation  string `xml:"rejectReasonExplanation"`
+
+	// Pricing / dimensions
+	TotalDesi     string `xml:"totalDesi"`
+	TotalDesiKg   string `xml:"totalDesiKg"`
+	TotalKg       string `xml:"totalKg"`
+	TotalCargo    string `xml:"totalCargo"`
+	TotalAmount   string `xml:"totalAmount"`
+	TotalPrice    string `xml:"totalPrice"`
+	TotalVat      string `xml:"totalVat"`
 	InvoiceAmount string `xml:"invoiceAmount"`
+	Product       string `xml:"product"`
 
-	// Error info
-	ErrCode    string `xml:"errCode"`
-	ErrMessage string `xml:"errMessage"`
+	// Document info
+	DocNumber     string `xml:"docNumber"`
+	DocType       string `xml:"docType"`
+	DocumentDate  string `xml:"documentDate"`
+
+	// Tracking URL
+	TrackingUrl string `xml:"trackingUrl"`
 
 	// Historical tracking events
 	InvDocCargoVOArray []InvDocCargoVO `xml:"invDocCargoVOArray,omitempty"`

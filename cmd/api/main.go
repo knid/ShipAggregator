@@ -246,15 +246,7 @@ func run() error {
 	ledgerService := billing.NewLedgerService(queries, logger)
 	logger.Info("billing services initialized")
 
-	// Initialize shipment service
-	shipmentService := shipment.NewService(queries, adapterPool, ledgerService, walletService, logger)
-	logger.Info("shipment service initialized")
-
-	// Initialize organization service
-	organizationService := organization.NewService(queries)
-	logger.Info("organization service initialized")
-
-	// Build platform credentials for marketplace pricing via live provider APIs
+	// Build platform credentials for marketplace pricing and shipment creation
 	platformCreds := make(map[domain.ProviderCode]*domain.ProviderCredentials)
 	if cfg.Providers.Aras.Username != "" && cfg.Providers.Aras.Password != "" && cfg.Providers.Aras.CustomerCode != "" {
 		platformCreds[domain.ProviderCodeAras] = &domain.ProviderCredentials{
@@ -262,18 +254,23 @@ func run() error {
 			Password:     cfg.Providers.Aras.Password,
 			CustomerCode: cfg.Providers.Aras.CustomerCode,
 		}
-		logger.Info("platform credentials configured for Aras marketplace pricing")
+		logger.Info("platform credentials configured for Aras")
 	}
-	// Yurtiçi uses static contract pricing (no API call), so credentials
-	// are not required for quoting. We still store them when available for
-	// other operations (shipment creation, tracking, etc.).
 	if cfg.Features.YurticiEnabled {
 		platformCreds[domain.ProviderCodeYurtici] = &domain.ProviderCredentials{
 			Username: cfg.Providers.Yurtici.Username,
 			Password: cfg.Providers.Yurtici.Password,
 		}
-		logger.Info("platform credentials configured for Yurtici marketplace pricing")
+		logger.Info("platform credentials configured for Yurtici")
 	}
+
+	// Initialize shipment service
+	shipmentService := shipment.NewService(queries, adapterPool, platformCreds, ledgerService, walletService, logger)
+	logger.Info("shipment service initialized")
+
+	// Initialize organization service
+	organizationService := organization.NewService(queries)
+	logger.Info("organization service initialized")
 
 	// Initialize quote service (US1: Multi-carrier rate shopping)
 	var quoteService *quote.Service

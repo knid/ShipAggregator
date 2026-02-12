@@ -148,16 +148,34 @@ func MapStatusDescription(yurticiStatus string) string {
 var ErrorCodeMapping = map[string]string{
 	"0":     "SUCCESS",
 	"936":   "PROVIDER_ERROR",         // Unexpected error (retryable)
+	"60017": "PROVIDER_REJECTED",      // Invoice key not found
+	"60018": "PROVIDER_REJECTED",      // Receiver name not found
+	"60019": "PROVIDER_REJECTED",      // Receiver address not found
 	"60020": "PROVIDER_REJECTED",      // Cargo key already exists
+	"80057": "PROVIDER_NOT_FOUND",     // Job ID not found
 	"80859": "PROVIDER_REJECTED",      // Cargo key param not found
 	"82500": "PROVIDER_REJECTED",      // Cargo key length exceeded
+	"82501": "PROVIDER_REJECTED",      // Invoice key length exceeded
 	"82502": "PROVIDER_REJECTED",      // Receiver address length error
 	"82503": "PROVIDER_REJECTED",      // Receiver name length exceeded
 	"82505": "PROVIDER_REJECTED",      // COD invoice amount missing
+	"82506": "PROVIDER_REJECTED",      // COD invoice amount length exceeded
+	"82507": "PROVIDER_REJECTED",      // COD document ID not found
+	"82508": "PROVIDER_REJECTED",      // COD document ID length exceeded
+	"82509": "PROVIDER_REJECTED",      // COD selected credit not found
+	"82510": "PROVIDER_REJECTED",      // COD selected credit length exceeded
+	"82511": "PROVIDER_REJECTED",      // COD credit rule not found
+	"82512": "PROVIDER_REJECTED",      // COD payment type mismatch with contract
+	"82513": "PROVIDER_REJECTED",      // Invalid collection type
+	"82514": "PROVIDER_REJECTED",      // Invalid document save type
 	"82515": "PROVIDER_REJECTED",      // Invalid email
 	"82516": "PROVIDER_REJECTED",      // Invalid phone
+	"82517": "PROVIDER_REJECTED",      // Invalid parameter format
+	"82518": "PROVIDER_REJECTED",      // Invalid credit rule parameter
 	"82519": "PROVIDER_NOT_FOUND",     // Cargo key not found for user
 	"82520": "PROVIDER_REJECTED",      // Cargo key already cancelled
+	"82526": "PROVIDER_REJECTED",      // KEYS parameter missing or invalid
+	"82527": "PROVIDER_REJECTED",      // KEY_TYPE parameter missing or invalid
 }
 
 // MapErrorCode maps a Yurtici error code to a normalized error code.
@@ -180,16 +198,34 @@ func MapErrorMessage(errCode, errMessage string) string {
 	}
 	messages := map[string]string{
 		"936":   "Beklenmeyen hata oluştu",
+		"60017": "Fatura anahtarı bulunamadı",
+		"60018": "Alıcı adı bulunamadı",
+		"60019": "Alıcı adresi bulunamadı",
 		"60020": "Bu kargo anahtarı zaten kayıtlı",
+		"80057": "Yurtiçi Kargo talep kodu bulunamadı",
 		"80859": "Kargo anahtarı parametresi bulunamadı",
 		"82500": "Kargo anahtarı uzunluk sınırını aştı",
+		"82501": "Fatura anahtarı uzunluk sınırını aştı",
 		"82502": "Alıcı adres bilgisi hatalı",
 		"82503": "Alıcı ad bilgisi çok uzun",
 		"82505": "Tahsilatlı gönderi fatura tutarı eksik",
+		"82506": "Tahsilatlı gönderi fatura tutarı uzunluk sınırını aştı",
+		"82507": "Tahsilatlı gönderi fatura numarası bulunamadı",
+		"82508": "Tahsilatlı gönderi fatura numarası uzunluk sınırını aştı",
+		"82509": "Tahsilatlı gönderi müşteri taksit seçimi bulunamadı",
+		"82510": "Tahsilatlı gönderi müşteri taksit seçimi uzunluk sınırını aştı",
+		"82511": "Tahsilatlı gönderi taksit uygulama kriteri bulunamadı",
+		"82512": "Tahsilatlı gönderi ödeme tipi sözleşme ile uyuşmuyor",
+		"82513": "Hatalı ödeme tipi, 0 (Nakit) veya 1 (Kredi Kartı) olmalıdır",
+		"82514": "Hatalı fatura tipi, 0 (Aynı Fatura) veya 1 (Ayrı Fatura) olmalıdır",
 		"82515": "Geçersiz e-posta adresi",
 		"82516": "Geçersiz telefon numarası",
+		"82517": "Hatalı format bilgisi, parametre belirtilen formatta olmalıdır",
+		"82518": "Tahsilatlı gönderi taksit uygulama kriteri parametresi hatalı",
 		"82519": "Bu kargo anahtarı kullanıcı için bulunamadı",
 		"82520": "Bu kargo anahtarı zaten iptal edilmiş",
+		"82526": "KEYS parametresi hatalı ya da eksik",
+		"82527": "KEY_TYPE parametresi hatalı ya da eksik",
 	}
 	if msg, ok := messages[errCode]; ok {
 		return msg
