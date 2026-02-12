@@ -52,14 +52,14 @@ func (s TopupStatus) IsFinal() bool {
 type PaymentProvider string
 
 const (
-	// PaymentProviderIyzico is the Iyzico payment provider.
-	PaymentProviderIyzico PaymentProvider = "iyzico"
+	// PaymentProviderPayTR is the PayTR payment provider.
+	PaymentProviderPayTR PaymentProvider = "paytr"
 )
 
 // IsValid checks if the payment provider is valid.
 func (p PaymentProvider) IsValid() bool {
 	switch p {
-	case PaymentProviderIyzico:
+	case PaymentProviderPayTR:
 		return true
 	default:
 		return false
@@ -117,7 +117,7 @@ func NewTopup(organizationID uuid.UUID, idempotencyKey string, amountKurus int64
 		AmountKurus:     amountKurus,
 		Currency:        "TRY",
 		Status:          TopupStatusPending,
-		PaymentProvider: PaymentProviderIyzico,
+		PaymentProvider: PaymentProviderPayTR,
 		ExpiresAt:       now.Add(expiresIn),
 		CreatedAt:       now,
 		UpdatedAt:       now,

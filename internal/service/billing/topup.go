@@ -13,7 +13,7 @@ import (
 
 	"github.com/knid/kargonet/internal/domain"
 	"github.com/knid/kargonet/internal/observability"
-	"github.com/knid/kargonet/internal/payment/iyzico"
+	"github.com/knid/kargonet/internal/payment/paytr"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 )
 
@@ -43,8 +43,6 @@ type TopupConfig struct {
 	MaxTopupsPerHour int
 	// ExpirationDuration is the duration before a topup expires.
 	ExpirationDuration time.Duration
-	// CallbackURL is the URL for Iyzico callbacks.
-	CallbackURL string
 }
 
 // DefaultTopupConfig returns the default topup configuration.
@@ -61,7 +59,7 @@ func DefaultTopupConfig() TopupConfig {
 // TopupService provides topup operations.
 type TopupService struct {
 	queries       *db.Queries
-	iyzicoClient  *iyzico.Client
+	paytrClient   *paytr.Client
 	ledgerService *LedgerService
 	config        TopupConfig
 	logger        *observability.Logger
@@ -70,14 +68,14 @@ type TopupService struct {
 // NewTopupService creates a new topup service.
 func NewTopupService(
 	queries *db.Queries,
-	iyzicoClient *iyzico.Client,
+	paytrClient *paytr.Client,
 	ledgerService *LedgerService,
 	config TopupConfig,
 	logger *observability.Logger,
 ) *TopupService {
 	return &TopupService{
 		queries:       queries,
-		iyzicoClient:  iyzicoClient,
+		paytrClient:   paytrClient,
 		ledgerService: ledgerService,
 		config:        config,
 		logger:        logger,
@@ -88,9 +86,8 @@ func NewTopupService(
 type CreateTopupRequest struct {
 	OrganizationID uuid.UUID
 	AmountKurus    int64
-	ReturnURL      string
 	IdempotencyKey string
-	// Organization details for Iyzico
+	// Organization details for PayTR
 	OrgName    string
 	OrgEmail   string
 	OrgPhone   string
@@ -125,7 +122,7 @@ type Topup struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-// Create creates a new topup and initializes payment with Iyzico.
+// Create creates a new topup and obtains a PayTR iframe token.
 func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*CreateTopupResult, error) {
 	// Validate amount
 	if req.AmountKurus < s.config.MinAmountKurus {
@@ -160,51 +157,37 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 		AmountKurus:     int32(req.AmountKurus),
 		Currency:        "TRY",
 		Status:          string(domain.TopupStatusPending),
-		PaymentProvider: string(domain.PaymentProviderIyzico),
+		PaymentProvider: string(domain.PaymentProviderPayTR),
 		ExpiresAt:       pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create topup: %w", err)
 	}
 
-	// Initialize Iyzico checkout form
+	// Build PayTR basket
 	priceStr := fmt.Sprintf("%.2f", float64(req.AmountKurus)/100.0)
+	basket := paytr.NewWalletTopupBasket("Cüzdan Yükleme", priceStr)
 
-	buyer := iyzico.NewBuyerFromOrganization(
-		req.OrganizationID.String(),
-		req.OrgName,
-		req.OrgEmail,
-		req.OrgPhone,
-		req.OrgAddress,
-		req.OrgCity,
-		req.ClientIP,
-	)
+	// Request PayTR iframe token
+	paytrReq := &paytr.GetTokenRequest{
+		MerchantOID:   dbTopup.ID.String(),
+		Email:         req.OrgEmail,
+		PaymentAmount: int(req.AmountKurus),
+		UserIP:        req.ClientIP,
+		UserName:      req.OrgName,
+		UserAddress:   req.OrgAddress,
+		UserPhone:     req.OrgPhone,
+		UserBasket:    basket,
+		Currency:      "TL",
+		NoInstallment: 1,
+		MaxInstallment: 0,
+	}
 
-	billingAddress := iyzico.NewAddressFromOrganization(
-		req.OrgName,
-		req.OrgAddress,
-		req.OrgCity,
-	)
-
-	basketItem := iyzico.NewWalletTopupBasketItem(priceStr)
-
-	iyzicoReq := iyzico.NewCheckoutFormRequest(
-		dbTopup.ID.String(),
-		priceStr,
-		iyzico.CurrencyTRY,
-		dbTopup.ID.String(),
-		s.config.CallbackURL,
-		buyer,
-		billingAddress,
-		[]iyzico.BasketItem{basketItem},
-	)
-
-	iyzicoResp, err := s.iyzicoClient.InitializeCheckoutForm(ctx, iyzicoReq)
+	paytrResp, err := s.paytrClient.GetToken(ctx, paytrReq)
 	if err != nil {
-		// Mark topup as failed
 		failureReason := "Payment initialization failed"
-		if iyzicoErr := iyzico.GetIyzicoError(err); iyzicoErr != nil {
-			failureReason = iyzicoErr.Message
+		if paytrErr, ok := err.(*paytr.PayTRError); ok {
+			failureReason = paytrErr.Reason
 		}
 		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 			ID:            dbTopup.ID,
@@ -213,21 +196,21 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 		return nil, fmt.Errorf("%w: %v", ErrPaymentInitFailed, err)
 	}
 
-	// Update topup with payment details
-	paymentURL := iyzicoResp.GetPaymentURL()
-	token := iyzicoResp.GetToken()
+	// Build the iframe URL from the token
+	iframeURL := s.paytrClient.IFrameURL(paytrResp.Token)
+	token := paytrResp.Token
 
 	updatedTopup, err := s.queries.UpdateTopupPaymentInitiated(ctx, db.UpdateTopupPaymentInitiatedParams{
 		ID:           dbTopup.ID,
-		PaymentID:    nil, // Will be set after payment completion
-		PaymentUrl:   &paymentURL,
+		PaymentID:    nil, // PayTR uses merchant_oid, no separate payment ID
+		PaymentUrl:   &iframeURL,
 		PaymentToken: &token,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update topup with payment details: %w", err)
 	}
 
-	s.logger.Info("Topup created and payment initialized",
+	s.logger.Info("Topup created and PayTR iframe token obtained",
 		"topup_id", dbTopup.ID,
 		"organization_id", req.OrganizationID,
 		"amount_kurus", req.AmountKurus,
@@ -236,30 +219,20 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 	topup := dbTopupToTopup(updatedTopup)
 	return &CreateTopupResult{
 		Topup:      topup,
-		PaymentURL: paymentURL,
+		PaymentURL: iframeURL,
 	}, nil
 }
 
-// ConfirmTopupRequest represents a request to confirm a topup.
-type ConfirmTopupRequest struct {
-	TopupID      uuid.UUID
-	PaymentToken string
-}
-
-// Confirm confirms a topup after payment completion.
-func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*Topup, error) {
-	// Get topup by ID or token
-	var dbTopup *db.Topup
-	var err error
-
-	if req.TopupID != uuid.Nil {
-		dbTopup, err = s.queries.GetTopupByID(ctx, req.TopupID)
-	} else if req.PaymentToken != "" {
-		dbTopup, err = s.queries.GetTopupByPaymentToken(ctx, &req.PaymentToken)
-	} else {
-		return nil, ErrTopupNotFound
+// ConfirmByMerchantOID confirms a topup using the merchant_oid from PayTR callback.
+// This is called when PayTR sends a server-to-server callback with status.
+func (s *TopupService) ConfirmByMerchantOID(ctx context.Context, merchantOID, status, totalAmount string) (*Topup, error) {
+	// Parse merchant_oid as topup ID
+	topupID, err := uuid.Parse(merchantOID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid merchant_oid: %w", err)
 	}
 
+	dbTopup, err := s.queries.GetTopupByID(ctx, topupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrTopupNotFound
@@ -272,71 +245,20 @@ func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*
 		return dbTopupToTopup(dbTopup), nil
 	}
 
-	// Check if in valid state
-	if dbTopup.Status != string(domain.TopupStatusProcessing) {
+	// Check if in valid state (pending or processing)
+	if dbTopup.Status != string(domain.TopupStatusProcessing) &&
+		dbTopup.Status != string(domain.TopupStatusPending) {
 		return nil, ErrTopupInvalidState
 	}
 
-	// Check if expired
-	if dbTopup.ExpiresAt.Valid && time.Now().UTC().After(dbTopup.ExpiresAt.Time) {
-		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
-			ID:            dbTopup.ID,
-			FailureReason: stringPtr("Payment expired"),
-		})
-		return nil, ErrTopupExpired
-	}
-
-	// Retrieve payment result from Iyzico
-	token := stringPtrValue(dbTopup.PaymentToken)
-	if token == "" {
-		return nil, fmt.Errorf("topup has no payment token")
-	}
-
-	iyzicoResp, err := s.iyzicoClient.RetrieveCheckoutFormResult(ctx, &iyzico.CheckoutFormRetrieveRequest{
-		BaseRequest: iyzico.BaseRequest{
-			Locale:         iyzico.LocaleTR,
-			ConversationID: dbTopup.ID.String(),
-		},
-		Token: token,
-	})
-	if err != nil {
-		// Check if it's an Iyzico error
-		if iyzicoErr := iyzico.GetIyzicoError(err); iyzicoErr != nil {
-			failureReason := iyzico.MapErrorToUserMessage(err)
-			_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
-				ID:            dbTopup.ID,
-				FailureReason: &failureReason,
-			})
-			return nil, fmt.Errorf("%w: %s", ErrPaymentConfirmFailed, failureReason)
-		}
-		return nil, fmt.Errorf("failed to retrieve payment result: %w", err)
-	}
-
-	// Check payment status
-	if !iyzicoResp.IsPaymentSuccess() {
-		failureReason := "Payment was not successful"
-		if iyzicoResp.ErrorMessage != "" {
-			failureReason = iyzicoResp.ErrorMessage
-		}
+	// Handle failure
+	if status != "success" {
+		failureReason := "Payment failed"
 		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 			ID:            dbTopup.ID,
 			FailureReason: &failureReason,
 		})
-		return nil, fmt.Errorf("%w: %s", ErrPaymentConfirmFailed, failureReason)
-	}
-
-	// Check for fraud
-	if iyzicoResp.IsFraudSuspected() {
-		failureReason := "Payment flagged for fraud review"
-		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
-			ID:            dbTopup.ID,
-			FailureReason: &failureReason,
-		})
-		s.logger.Warn("Topup flagged for fraud",
-			"topup_id", dbTopup.ID,
-			"payment_id", iyzicoResp.PaymentID,
-		)
-		return nil, fmt.Errorf("%w: %s", ErrPaymentConfirmFailed, failureReason)
+		return nil, fmt.Errorf("%w: payment status=%s", ErrPaymentConfirmFailed, status)
 	}
 
 	// Create ledger entry
@@ -345,11 +267,10 @@ func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*
 		AmountKurus:    int64(dbTopup.AmountKurus),
 		ReferenceType:  domain.ReferenceTypeTopup,
 		ReferenceID:    dbTopup.ID,
-		Description:    "Wallet top-up via Iyzico",
+		Description:    "Wallet top-up via PayTR",
 		Metadata: map[string]interface{}{
-			"iyzico_payment_id": iyzicoResp.PaymentID,
-			"card_last_four":    iyzicoResp.LastFourDigits,
-			"card_type":         iyzicoResp.CardAssociation,
+			"paytr_merchant_oid": merchantOID,
+			"paytr_total_amount": totalAmount,
 		},
 		ActorType: domain.ActorTypeSystem,
 	})
@@ -380,17 +301,42 @@ func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*
 		"topup_id", dbTopup.ID,
 		"organization_id", dbTopup.OrganizationID,
 		"amount_kurus", dbTopup.AmountKurus,
-		"payment_id", iyzicoResp.PaymentID,
+		"merchant_oid", merchantOID,
 	)
 
 	return dbTopupToTopup(completedTopup), nil
 }
 
-// ConfirmByToken confirms a topup using the payment token (for callbacks).
-func (s *TopupService) ConfirmByToken(ctx context.Context, token string) (*Topup, error) {
-	return s.Confirm(ctx, &ConfirmTopupRequest{
-		PaymentToken: token,
+// FailByMerchantOID marks a topup as failed using the merchant_oid.
+func (s *TopupService) FailByMerchantOID(ctx context.Context, merchantOID string) error {
+	topupID, err := uuid.Parse(merchantOID)
+	if err != nil {
+		return fmt.Errorf("invalid merchant_oid: %w", err)
+	}
+
+	failureReason := "Payment failed via PayTR callback"
+	_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+		ID:            topupID,
+		FailureReason: &failureReason,
 	})
+
+	s.logger.Info("Topup marked as failed via callback",
+		"topup_id", topupID,
+		"merchant_oid", merchantOID,
+	)
+
+	return nil
+}
+
+// Confirm confirms a topup after payment completion (used by manual confirm endpoint).
+func (s *TopupService) Confirm(ctx context.Context, req *ConfirmTopupRequest) (*Topup, error) {
+	return s.ConfirmByMerchantOID(ctx, req.TopupID.String(), "success", "")
+}
+
+// ConfirmTopupRequest represents a request to confirm a topup.
+type ConfirmTopupRequest struct {
+	TopupID      uuid.UUID
+	PaymentToken string
 }
 
 // Get retrieves a topup by ID.

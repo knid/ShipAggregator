@@ -26,7 +26,7 @@ import (
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
-	"github.com/knid/kargonet/internal/payment/iyzico"
+	"github.com/knid/kargonet/internal/payment/paytr"
 	"github.com/knid/kargonet/internal/repository/postgres"
 	"github.com/knid/kargonet/internal/service/auth"
 	"github.com/knid/kargonet/internal/service/billing"
@@ -296,19 +296,21 @@ func run() error {
 	refundService := billing.NewRefundService(queries, ledgerService, logger)
 	logger.Info("billing sub-services initialized (COD, refund)")
 
-	// Initialize topup service (US4: Wallet Top-Up via Iyzico)
-	var iyzicoClient *iyzico.Client
-	iyzicoReturnURL := cfg.Iyzico.CallbackURL
-	if cfg.Iyzico.APIKey != "" {
-		iyzicoClient = iyzico.NewClient(iyzico.Config{
-			APIKey:      cfg.Iyzico.APIKey,
-			SecretKey:   cfg.Iyzico.SecretKey,
-			BaseURL:     cfg.Iyzico.BaseURL,
-			CallbackURL: cfg.Iyzico.CallbackURL,
+	// Initialize topup service (US4: Wallet Top-Up via PayTR)
+	var paytrClient *paytr.Client
+	if cfg.PayTR.MerchantID != "" {
+		paytrClient = paytr.NewClient(paytr.Config{
+			MerchantID:   cfg.PayTR.MerchantID,
+			MerchantKey:  cfg.PayTR.MerchantKey,
+			MerchantSalt: cfg.PayTR.MerchantSalt,
+			CallbackURL:  cfg.PayTR.CallbackURL,
+			OkURL:        cfg.PayTR.OkURL,
+			FailURL:      cfg.PayTR.FailURL,
+			TestMode:     cfg.PayTR.TestMode,
 		}, logger)
-		logger.Info("iyzico client initialized")
+		logger.Info("paytr client initialized")
 	}
-	topupService := billing.NewTopupService(queries, iyzicoClient, ledgerService, billing.DefaultTopupConfig(), logger)
+	topupService := billing.NewTopupService(queries, paytrClient, ledgerService, billing.DefaultTopupConfig(), logger)
 	logger.Info("topup service initialized")
 
 	// Initialize API key service (US6: API Key Management)
@@ -368,8 +370,7 @@ func run() error {
 		CODService:                  codService,
 		TopupService:                topupService,
 		RefundService:               refundService,
-		IyzicoClient:                iyzicoClient,
-		IyzicoReturnURL:             iyzicoReturnURL,
+		PayTRClient:                 paytrClient,
 		APIKeyService:               apiKeyService,
 		AuditLogRepository:          auditLogRepo,
 		ProviderAPILogRepository:    providerAPILogRepo,

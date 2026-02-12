@@ -35,7 +35,7 @@ type Config struct {
 	Webhook       WebhookConfig
 	Worker        WorkerConfig
 	Observability ObservabilityConfig
-	Iyzico        IyzicoConfig
+	PayTR         PayTRConfig
 	Providers     ProvidersConfig
 	Features      FeaturesConfig
 	CORS          CORSConfig
@@ -163,12 +163,15 @@ type ObservabilityConfig struct {
 	MetricsPath     string
 }
 
-// IyzicoConfig holds Iyzico payment gateway configuration.
-type IyzicoConfig struct {
-	APIKey      string
-	SecretKey   string
-	BaseURL     string
-	CallbackURL string
+// PayTRConfig holds PayTR payment gateway configuration.
+type PayTRConfig struct {
+	MerchantID   string
+	MerchantKey  string
+	MerchantSalt string
+	CallbackURL  string // Server-to-server notification URL
+	OkURL        string // User-facing success redirect
+	FailURL      string // User-facing failure redirect
+	TestMode     bool
 }
 
 // ProviderConfig holds configuration for a single provider.
@@ -316,11 +319,14 @@ func Load() (*Config, error) {
 	cfg.Observability.MetricsPort = getEnvInt("METRICS_PORT", 9090)
 	cfg.Observability.MetricsPath = getEnvOrDefault("METRICS_PATH", "/metrics")
 
-	// Iyzico config
-	cfg.Iyzico.APIKey = os.Getenv("IYZICO_API_KEY")
-	cfg.Iyzico.SecretKey = os.Getenv("IYZICO_SECRET_KEY")
-	cfg.Iyzico.BaseURL = getEnvOrDefault("IYZICO_BASE_URL", "https://sandbox-api.iyzipay.com")
-	cfg.Iyzico.CallbackURL = os.Getenv("IYZICO_CALLBACK_URL")
+	// PayTR config
+	cfg.PayTR.MerchantID = os.Getenv("PAYTR_MERCHANT_ID")
+	cfg.PayTR.MerchantKey = os.Getenv("PAYTR_MERCHANT_KEY")
+	cfg.PayTR.MerchantSalt = os.Getenv("PAYTR_MERCHANT_SALT")
+	cfg.PayTR.CallbackURL = os.Getenv("PAYTR_CALLBACK_URL")
+	cfg.PayTR.OkURL = os.Getenv("PAYTR_OK_URL")
+	cfg.PayTR.FailURL = os.Getenv("PAYTR_FAIL_URL")
+	cfg.PayTR.TestMode = getEnvBool("PAYTR_TEST_MODE", false)
 
 	// Provider configs
 	cfg.Providers.Aras = ProviderConfig{

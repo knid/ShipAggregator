@@ -15,7 +15,7 @@ import (
 	"github.com/knid/kargonet/internal/api/integration"
 	"github.com/knid/kargonet/internal/api/middleware"
 	"github.com/knid/kargonet/internal/observability"
-	"github.com/knid/kargonet/internal/payment/iyzico"
+	"github.com/knid/kargonet/internal/payment/paytr"
 	"github.com/knid/kargonet/internal/repository/postgres"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	"github.com/knid/kargonet/internal/repository/redis"
@@ -72,10 +72,8 @@ type RouterConfig struct {
 	TopupService *billing.TopupService
 	// RefundService is the refund service (US7: Shipment Cancellation & Refund).
 	RefundService *billing.RefundService
-	// IyzicoClient is the Iyzico payment client (US4: Wallet Top-Up).
-	IyzicoClient *iyzico.Client
-	// IyzicoReturnURL is the return URL for Iyzico callbacks (US4: Wallet Top-Up).
-	IyzicoReturnURL string
+	// PayTRClient is the PayTR payment client (US4: Wallet Top-Up).
+	PayTRClient *paytr.Client
 	// TrackingService is the tracking service (US5: Tracking Updates).
 	TrackingService *tracking.Service
 	// WebhookPublisher is the webhook publisher (US5: Webhooks).
@@ -232,14 +230,13 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 		}
 	}
 
-	// Initialize Iyzico integration handler (US4: Wallet Top-Up)
-	var iyzicoHandler *integration.IyzicoHandler
-	if cfg.TopupService != nil && cfg.IyzicoClient != nil {
-		iyzicoHandler = integration.NewIyzicoHandler(
+	// Initialize PayTR integration handler (US4: Wallet Top-Up)
+	var paytrHandler *integration.PayTRHandler
+	if cfg.TopupService != nil && cfg.PayTRClient != nil {
+		paytrHandler = integration.NewPayTRHandler(
 			cfg.TopupService,
-			cfg.IyzicoClient,
+			cfg.PayTRClient,
 			cfg.Logger,
-			cfg.IyzicoReturnURL,
 		)
 	}
 
@@ -511,7 +508,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					r.With(middleware.RequireScope("billing:cod_reconcile")).Post("/{id}/collected", billingHandler.MarkCODSettlementCollected)
 				})
 
-				// Topup routes (US4: Wallet Top-Up via Iyzico)
+				// Topup routes (US4: Wallet Top-Up via PayTR)
 				r.Route("/topups", func(r chi.Router) {
 					r.Get("/", billingHandler.ListTopups)
 					r.With(middleware.RequireScope("billing:topup")).Post("/", billingHandler.CreateTopup)
@@ -662,13 +659,11 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 
 	// Integration endpoints (for external service callbacks)
 	r.Route("/integrations", func(r chi.Router) {
-		// Iyzico payment integration (US4: Wallet Top-Up)
-		r.Route("/iyzico", func(r chi.Router) {
-			if iyzicoHandler != nil {
-				// Callback endpoint - called when user completes payment on Iyzico
-				r.Post("/callback", iyzicoHandler.HandleCallback)
-				// Webhook endpoint - called by Iyzico for async notifications
-				r.Post("/webhook", iyzicoHandler.HandleWebhook)
+		// PayTR payment integration (US4: Wallet Top-Up)
+		r.Route("/paytr", func(r chi.Router) {
+			if paytrHandler != nil {
+				// Callback endpoint - server-to-server notification from PayTR
+				r.Post("/callback", paytrHandler.HandleCallback)
 			}
 		})
 

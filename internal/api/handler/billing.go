@@ -1113,7 +1113,7 @@ func codSettlementToResponse(settlement *billing.CODSettlement) CODSettlementRes
 	return resp
 }
 
-// Topup Endpoints (US4: Wallet Top-Up via Iyzico)
+// Topup Endpoints (US4: Wallet Top-Up via PayTR)
 
 // CreateTopup handles POST /billing/topups
 // Creates a new wallet top-up and returns the payment URL.
@@ -1145,11 +1145,6 @@ func (h *BillingHandler) CreateTopup(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, NewBadRequestError("amount_kurus must be positive"))
 		return
 	}
-	if req.ReturnURL == "" {
-		WriteError(w, r, NewBadRequestError("return_url is required"))
-		return
-	}
-
 	// Get idempotency key from header or generate one
 	idempotencyKey := r.Header.Get("Idempotency-Key")
 	if idempotencyKey == "" {
@@ -1166,7 +1161,6 @@ func (h *BillingHandler) CreateTopup(w http.ResponseWriter, r *http.Request) {
 	result, err := h.topupService.Create(ctx, &billing.CreateTopupRequest{
 		OrganizationID: orgID,
 		AmountKurus:    req.AmountKurus,
-		ReturnURL:      req.ReturnURL,
 		IdempotencyKey: idempotencyKey,
 		OrgName:        req.OrgName,
 		OrgEmail:       req.OrgEmail,
@@ -1434,7 +1428,6 @@ func (h *BillingHandler) CancelTopup(w http.ResponseWriter, r *http.Request) {
 // CreateTopupRequest represents a request to create a topup.
 type CreateTopupRequest struct {
 	AmountKurus int64  `json:"amount_kurus"`
-	ReturnURL   string `json:"return_url"`
 	OrgName     string `json:"org_name,omitempty"`
 	OrgEmail    string `json:"org_email,omitempty"`
 	OrgPhone    string `json:"org_phone,omitempty"`
