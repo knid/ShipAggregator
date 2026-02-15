@@ -39,7 +39,7 @@ type RegisterRequest struct {
 
 // RegisterResponse represents the response for a successful registration.
 type RegisterResponse struct {
-	Token          string     `json:"token"`
+	Token          string     `json:"session_token"`
 	ExpiresAt      time.Time  `json:"expires_at"`
 	Member         MemberInfo `json:"member"`
 	Role           RoleInfo   `json:"role"`
@@ -55,7 +55,7 @@ type LoginRequest struct {
 
 // LoginResponse represents the response for a successful login.
 type LoginResponse struct {
-	Token     string     `json:"token"`
+	Token     string     `json:"session_token"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	Member    MemberInfo `json:"member"`
 	Role      RoleInfo   `json:"role"`

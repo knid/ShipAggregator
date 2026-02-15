@@ -164,6 +164,16 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 		return nil, fmt.Errorf("failed to create topup: %w", err)
 	}
 
+	// Check if payment client is configured
+	if s.paytrClient == nil {
+		failureReason := "Payment provider not configured"
+		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+			ID:            dbTopup.ID,
+			FailureReason: &failureReason,
+		})
+		return nil, fmt.Errorf("%w: payment provider not configured", ErrPaymentInitFailed)
+	}
+
 	// Build PayTR basket
 	priceStr := fmt.Sprintf("%.2f", float64(req.AmountKurus)/100.0)
 	basket := paytr.NewWalletTopupBasket("Cüzdan Yükleme", priceStr)

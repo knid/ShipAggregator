@@ -14,6 +14,7 @@ import (
 
 	"github.com/knid/kargonet/internal/api/middleware"
 	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/label"
 	"github.com/knid/kargonet/internal/observability"
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
@@ -280,6 +281,88 @@ func (h *ShipmentHandler) PurchaseLabel(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// GetShipmentLabel handles GET /shipments/{id}/label
+// Returns the shipping label PDF for a shipment.
+func (h *ShipmentHandler) GetShipmentLabel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	orgID := middleware.GetOrganizationID(ctx)
+	if orgID == uuid.Nil {
+		WriteError(w, r, NewUnauthorizedError("Organization context not found"))
+		return
+	}
+
+	shipmentIDStr := chi.URLParam(r, "id")
+	shipmentID, err := uuid.Parse(shipmentIDStr)
+	if err != nil {
+		WriteError(w, r, NewBadRequestError("Invalid shipment ID"))
+		return
+	}
+
+	s, err := h.queries.GetShipmentByID(ctx, shipmentID)
+	if err != nil {
+		WriteError(w, r, NewNotFoundError("Shipment"))
+		return
+	}
+	if s.OrganizationID != orgID {
+		WriteError(w, r, NewNotFoundError("Shipment"))
+		return
+	}
+
+	if s.Status == "draft" || s.ProviderTrackingNumber == nil {
+		WriteError(w, r, NewBadRequestError("Shipment does not have a label yet"))
+		return
+	}
+
+	// Parse addresses and parcel from JSONB
+	var origin domain.AddressSnapshot
+	var dest domain.AddressSnapshot
+	var parcel domain.Parcel
+	if err := json.Unmarshal(s.OriginAddress, &origin); err != nil {
+		h.logger.Error("Failed to unmarshal origin address", "error", err)
+		WriteError(w, r, NewInternalError("Failed to generate label"))
+		return
+	}
+	if err := json.Unmarshal(s.DestinationAddress, &dest); err != nil {
+		h.logger.Error("Failed to unmarshal destination address", "error", err)
+		WriteError(w, r, NewInternalError("Failed to generate label"))
+		return
+	}
+	if err := json.Unmarshal(s.Parcel, &parcel); err != nil {
+		h.logger.Error("Failed to unmarshal parcel", "error", err)
+		WriteError(w, r, NewInternalError("Failed to generate label"))
+		return
+	}
+
+	pdfBytes, err := label.GenerateConvenienceLabel(label.ConvenienceLabelParams{
+		ProviderName:     s.ProviderCode,
+		TrackingNumber:   *s.ProviderTrackingNumber,
+		SenderName:       origin.ContactName,
+		SenderAddress:    origin.StreetLine1,
+		SenderCity:       origin.City,
+		SenderDistrict:   origin.District,
+		SenderPhone:      origin.Phone,
+		ReceiverName:     dest.ContactName,
+		ReceiverAddress:  dest.StreetLine1,
+		ReceiverCity:     dest.City,
+		ReceiverDistrict: dest.District,
+		ReceiverPhone:    dest.Phone,
+		WeightGrams:      parcel.WeightGrams,
+		DesiValue:        parcel.Desi(),
+		CreatedAt:        s.CreatedAt.Time,
+	})
+	if err != nil {
+		h.logger.Error("Failed to generate label", "error", err)
+		WriteError(w, r, NewInternalError("Failed to generate label"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "inline; filename=\"label_"+*s.ProviderTrackingNumber+".pdf\"")
+	w.WriteHeader(http.StatusOK)
+	w.Write(pdfBytes)
 }
 
 // CancelShipmentRequest represents the request body for cancelling a shipment.

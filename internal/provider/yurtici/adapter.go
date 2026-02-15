@@ -313,9 +313,16 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 		receiverName = *req.Destination.CompanyName + " - " + receiverName
 	}
 
-	// Calculate desi
-	desi := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
+	// Calculate desi: max(volumetric, weight_kg), minimum 1
+	volumetric := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
 	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
+	desi := volumetric
+	if weightKg > desi {
+		desi = weightKg
+	}
+	if desi < 1 {
+		desi = 1
+	}
 
 	order := ShippingOrderVO{
 		CargoKey:         cargoKey,

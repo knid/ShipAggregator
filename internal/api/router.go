@@ -399,6 +399,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.With(middleware.RequireScope("shipments:create")).Post("/", shipmentHandler.CreateShipment)
 				r.Get("/{id}", shipmentHandler.GetShipment)
 				r.With(middleware.RequireScope("shipments:label")).Post("/{id}/purchase-label", shipmentHandler.PurchaseLabel)
+				r.With(middleware.RequireScope("shipments:label")).Get("/{id}/label", shipmentHandler.GetShipmentLabel)
 				r.With(middleware.RequireScope("shipments:cancel")).Post("/{id}/cancel", shipmentHandler.CancelShipment)
 				// US5: Tracking endpoint
 				r.Get("/{id}/tracking", shipmentHandler.GetTracking)
