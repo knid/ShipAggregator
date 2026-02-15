@@ -179,6 +179,7 @@ type PayTRConfig struct {
 type ProviderConfig struct {
 	WSDLURL        string
 	BaseURL        string
+	ShipmentURL    string // Separate endpoint for shipment creation (e.g. Aras .asmx)
 	Username       string
 	Password       string
 	APIKey         string
@@ -348,6 +349,7 @@ func Load() (*Config, error) {
 	// Provider configs
 	cfg.Providers.Aras = ProviderConfig{
 		WSDLURL:       os.Getenv("ARAS_WSDL_URL"),
+		ShipmentURL:   os.Getenv("ARAS_SHIPMENT_URL"),
 		Username:      os.Getenv("ARAS_USERNAME"),
 		Password:      os.Getenv("ARAS_PASSWORD"),
 		CustomerCode:  os.Getenv("ARAS_CUSTOMER_CODE"),

@@ -7,6 +7,7 @@ import (
 	"html"
 	"log/slog"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,12 @@ const (
 	// SandboxEndpoint is the sandbox .svc integration endpoint.
 	SandboxEndpoint = "http://customerservicestest.araskargo.com.tr/ArasCargoIntegrationService.svc"
 
+	// DefaultShipmentEndpoint is the production .asmx shipment endpoint.
+	DefaultShipmentEndpoint = "https://customerws.araskargo.com.tr/arascargoservice.asmx"
+
+	// ShipmentSandboxEndpoint is the sandbox .asmx shipment endpoint.
+	ShipmentSandboxEndpoint = "http://customerservicestest.araskargo.com.tr/arascargoservice/arascargoservice.asmx"
+
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
 
@@ -40,6 +47,10 @@ type Config struct {
 	Endpoint string
 	// SandboxEndpoint is the sandbox .svc URL.
 	SandboxEndpoint string
+	// ShipmentEndpoint is the .asmx shipment endpoint URL.
+	ShipmentEndpoint string
+	// ShipmentSandboxEndpoint is the sandbox .asmx shipment URL.
+	ShipmentSandboxEndpoint string
 	// Timeout is the request timeout.
 	Timeout time.Duration
 	// UseSandbox indicates whether to use sandbox mode.
@@ -60,12 +71,14 @@ func DefaultConfig() Config {
 }
 
 // Adapter implements the provider.Adapter interface for Aras Kargo.
-// It uses the ArasCargoIntegrationService.svc unified SOAP 1.1 service.
+// It uses the ArasCargoIntegrationService.svc for queries and
+// the arascargoservice.asmx endpoint for shipment creation.
 type Adapter struct {
 	provider.BaseAdapter
-	config Config
-	client *soap.Client
-	logger *slog.Logger
+	config         Config
+	client         *soap.Client // .svc query endpoint
+	shipmentClient *soap.Client // .asmx shipment endpoint
+	logger         *slog.Logger
 }
 
 // NewAdapter creates a new Aras adapter.
@@ -77,6 +90,18 @@ func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 	endpoint := config.Endpoint
 	if config.UseSandbox && config.SandboxEndpoint != "" {
 		endpoint = config.SandboxEndpoint
+	}
+
+	shipmentEndpoint := config.ShipmentEndpoint
+	if config.UseSandbox && config.ShipmentSandboxEndpoint != "" {
+		shipmentEndpoint = config.ShipmentSandboxEndpoint
+	}
+	if shipmentEndpoint == "" {
+		if config.UseSandbox {
+			shipmentEndpoint = ShipmentSandboxEndpoint
+		} else {
+			shipmentEndpoint = DefaultShipmentEndpoint
+		}
 	}
 
 	var onRequest func(ctx context.Context, log soap.RequestLog)
@@ -95,11 +120,20 @@ func NewAdapter(config Config, logger *slog.Logger) (*Adapter, error) {
 		OnRequest:   onRequest,
 	}
 
+	shipmentClientConfig := soap.ClientConfig{
+		Endpoint:    shipmentEndpoint,
+		Timeout:     config.Timeout,
+		SOAPVersion: soap.SOAP12,
+		Logger:      logger,
+		OnRequest:   onRequest,
+	}
+
 	return &Adapter{
-		BaseAdapter: provider.NewBaseAdapter(ProviderCode, domain.ProviderAPITypeSOAP),
-		config:      config,
-		client:      soap.NewClient(clientConfig),
-		logger:      logger,
+		BaseAdapter:    provider.NewBaseAdapter(ProviderCode, domain.ProviderAPITypeSOAP),
+		config:         config,
+		client:         soap.NewClient(clientConfig),
+		shipmentClient: soap.NewClient(shipmentClientConfig),
+		logger:         logger,
 	}, nil
 }
 
@@ -127,6 +161,12 @@ func NewAdapterFromProviderConfig(cfg provider.AdapterConfig, logger *slog.Logge
 	}
 	if config.Timeout == 0 {
 		config.Timeout = DefaultTimeout
+	}
+
+	// Shipment endpoint can be passed via ARAS_SHIPMENT_URL env var
+	// since AdapterConfig is generic and doesn't have provider-specific fields.
+	if shipmentURL := os.Getenv("ARAS_SHIPMENT_URL"); shipmentURL != "" {
+		config.ShipmentEndpoint = shipmentURL
 	}
 
 	return NewAdapter(config, logger)
@@ -388,19 +428,214 @@ func (a *Adapter) GetQuote(_ context.Context, req provider.QuoteRequest) (*provi
 }
 
 // ---------------------------------------------------------------------------
-// CreateShipment — uses SetDataXML (TODO: implement when format is confirmed)
+// CreateShipment — uses SetOrder on the .asmx shipment endpoint.
 // ---------------------------------------------------------------------------
 
-func (a *Adapter) CreateShipment(_ context.Context, _ provider.CreateShipmentRequest) (*provider.CreateShipmentResponse, error) {
-	return nil, provider.ErrUnsupportedOperation
+func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmentRequest) (*provider.CreateShipmentResponse, error) {
+	creds, err := a.getCredentials(req.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate integration code from reference or timestamp
+	integrationCode := req.Reference
+	if integrationCode == "" {
+		integrationCode = fmt.Sprintf("EP%d", time.Now().UnixNano()%1e16)
+	}
+	if len(integrationCode) > 20 {
+		integrationCode = integrationCode[:20]
+	}
+
+	// Build receiver address
+	receiverAddress := buildArasAddressString(req.Destination)
+
+	// Build receiver name
+	receiverName := req.Destination.ContactName
+	if req.Destination.CompanyName != nil && *req.Destination.CompanyName != "" {
+		receiverName = *req.Destination.CompanyName + " - " + receiverName
+	}
+
+	// Calculate weight and volumetric
+	weightKg := float64(req.Parcel.WeightGrams) / 1000.0
+	if weightKg < 0.1 {
+		weightKg = 0.1
+	}
+	volumetric := float64(req.Parcel.LengthCm*req.Parcel.WidthCm*req.Parcel.HeightCm) / 3000.0
+	if volumetric < 0.1 {
+		volumetric = 0.1
+	}
+
+	weightStr := fmt.Sprintf("%.2f", weightKg)
+	volWeightStr := fmt.Sprintf("%.2f", volumetric)
+
+	// Build order
+	order := Order{
+		UserName:             creds.Username,
+		Password:             creds.Password,
+		TradingWaybillNumber: "00000000",
+		InvoiceNumber:        integrationCode,
+		IntegrationCode:      integrationCode,
+		ReceiverName:         receiverName,
+		ReceiverAddress:      receiverAddress,
+		ReceiverCityName:     req.Destination.City,
+		ReceiverTownName:     req.Destination.District,
+		ReceiverPhone1:       formatArasPhone(req.Destination.Phone),
+		VolumetricWeight:     volWeightStr,
+		Weight:               weightStr,
+		PayorTypeCode:        "1", // 1=Sender pays (required)
+		IsWorldWide:          "0", // 0=Domestic (required)
+		IsCod:                "0",
+		PieceCount:           1,
+	}
+
+	// Set city/town codes if available
+	if req.Destination.CityCode != "" {
+		order.CityCode = req.Destination.CityCode
+	}
+	if req.Destination.DistrictCode != "" {
+		order.TownCode = req.Destination.DistrictCode
+	}
+
+	// Set description if present
+	if req.Parcel.Description != nil && *req.Parcel.Description != "" {
+		order.Description = *req.Parcel.Description
+	}
+
+	// Map COD (Kapıda Ödeme)
+	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 {
+		order.IsCod = "1"
+		// Aras expects COD amount in TRY (lira), not kuruş
+		order.CodAmount = fmt.Sprintf("%.2f", float64(*req.CODAmountKurus)/100.0)
+		order.CodCollectionType = "0" // Default: cash
+		if req.CODCollectionType != nil && *req.CODCollectionType == "credit_card" {
+			order.CodCollectionType = "1"
+		}
+		order.CodBillingType = "0" // Default: sender pays
+	}
+
+	// Build piece details
+	order.PieceDetails = &PieceDetails{
+		PieceDetail: []PieceDetail{
+			{
+				VolumetricWeight: volWeightStr,
+				Weight:           weightStr,
+				BarcodeNumber:    integrationCode,
+			},
+		},
+	}
+
+	soapReq := &SetOrderRequest{
+		UserName: creds.Username,
+		Password: creds.Password,
+		OrderInfo: OrderInfo{
+			Order: order,
+		},
+	}
+
+	var resp SetOrderResponse
+	if err := a.shipmentClient.Call(ctx, soapActionSetOrder, soapReq, &resp); err != nil {
+		a.logger.Error("failed to create shipment",
+			slog.String("provider", string(ProviderCode)),
+			slog.String("error", err.Error()),
+		)
+		return nil, fmt.Errorf("failed to create shipment: %w", err)
+	}
+
+	// Check result
+	if resp.Result.OrderResultInfo == nil {
+		return nil, &provider.ProviderError{
+			Code:      "PROVIDER_ERROR",
+			Message:   "empty response from Aras SetOrder",
+			Retryable: true,
+		}
+	}
+
+	result := resp.Result.OrderResultInfo
+	if err := MapSetOrderResultCode(result.ResultCode, result.ResultMessage); err != nil {
+		return nil, err
+	}
+
+	return &provider.CreateShipmentResponse{
+		ProviderShipmentID: result.IntegrationCode,
+		TrackingNumber:     result.TrackingNumber,
+	}, nil
+}
+
+// buildArasAddressString builds a full address string from an AddressSnapshot.
+func buildArasAddressString(addr domain.AddressSnapshot) string {
+	parts := []string{addr.StreetLine1}
+	if addr.StreetLine2 != nil && *addr.StreetLine2 != "" {
+		parts = append(parts, *addr.StreetLine2)
+	}
+	if addr.Neighborhood != "" {
+		parts = append(parts, addr.Neighborhood)
+	}
+	return strings.Join(parts, " ")
+}
+
+// formatArasPhone formats a phone number for Aras (10 digits, no leading 0 or +90).
+func formatArasPhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	phone = strings.ReplaceAll(phone, " ", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+
+	if strings.HasPrefix(phone, "+90") {
+		phone = phone[3:]
+	} else if strings.HasPrefix(phone, "90") && len(phone) == 12 {
+		phone = phone[2:]
+	}
+
+	if strings.HasPrefix(phone, "0") && len(phone) == 11 {
+		phone = phone[1:]
+	}
+
+	return phone
 }
 
 // ---------------------------------------------------------------------------
-// CancelShipment — not available via .svc integration service
+// CancelShipment — uses CancelDispatch on the .asmx shipment endpoint.
+// Deletes orders sent via SetOrder (before waybill is issued at branch).
 // ---------------------------------------------------------------------------
 
-func (a *Adapter) CancelShipment(_ context.Context, _ provider.CancelShipmentRequest) (*provider.CancelShipmentResponse, error) {
-	return nil, provider.ErrUnsupportedOperation
+func (a *Adapter) CancelShipment(ctx context.Context, req provider.CancelShipmentRequest) (*provider.CancelShipmentResponse, error) {
+	creds, err := a.getCredentials(req.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use ProviderShipmentID (integration code) as the cancel key
+	integrationCode := req.ProviderShipmentID
+	if integrationCode == "" {
+		integrationCode = req.TrackingNumber
+	}
+	if integrationCode == "" {
+		return nil, provider.ErrInvalidRequest
+	}
+
+	soapReq := &CancelDispatchRequest{
+		UserName:        creds.Username,
+		Password:        creds.Password,
+		IntegrationCode: integrationCode,
+	}
+
+	var resp CancelDispatchResponse
+	if err := a.shipmentClient.Call(ctx, soapActionCancelDispatch, soapReq, &resp); err != nil {
+		a.logger.Error("failed to cancel shipment",
+			slog.String("provider", string(ProviderCode)),
+			slog.String("integration_code", integrationCode),
+			slog.String("error", err.Error()),
+		)
+		return nil, fmt.Errorf("failed to cancel shipment: %w", err)
+	}
+
+	if err := MapCancelDispatchResultCode(resp.Result.ResultCode, resp.Result.ResultMessage); err != nil {
+		return nil, err
+	}
+
+	return &provider.CancelShipmentResponse{
+		Success: true,
+		Message: resp.Result.ResultMessage,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------

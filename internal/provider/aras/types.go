@@ -92,3 +92,115 @@ type TrackingWebhookEvent struct {
 	LocationDetail    string    `json:"location_detail,omitempty"`
 	OccurredAt        time.Time `json:"occurred_at"`
 }
+
+// ---------------------------------------------------------------------------
+// SetOrder SOAP types (shipment .asmx endpoint)
+// ---------------------------------------------------------------------------
+
+// SOAP actions for the .asmx shipment endpoint.
+const (
+	soapActionSetOrder       = "http://tempuri.org/SetOrder"
+	soapActionCancelDispatch = "http://tempuri.org/CancelDispatch"
+)
+
+// SetOrderRequest is the SOAP request for creating a shipment via the .asmx endpoint.
+type SetOrderRequest struct {
+	XMLName   xml.Name  `xml:"http://tempuri.org/ SetOrder"`
+	OrderInfo OrderInfo `xml:"orderInfo"`
+	UserName  string    `xml:"userName"`
+	Password  string    `xml:"password"`
+}
+
+// OrderInfo wraps the Order element inside SetOrder.
+type OrderInfo struct {
+	Order Order `xml:"Order"`
+}
+
+// Order represents an Aras shipment order.
+type Order struct {
+	UserName             string        `xml:"UserName"`
+	Password             string        `xml:"Password"`
+	TradingWaybillNumber string        `xml:"TradingWaybillNumber"`
+	InvoiceNumber        string        `xml:"InvoiceNumber"`
+	IntegrationCode      string        `xml:"IntegrationCode"`
+	ReceiverName         string        `xml:"ReceiverName"`
+	ReceiverAddress      string        `xml:"ReceiverAddress"`
+	ReceiverCityName     string        `xml:"ReceiverCityName"`
+	ReceiverTownName     string        `xml:"ReceiverTownName"`
+	ReceiverPhone1       string        `xml:"ReceiverPhone1"`
+	ReceiverPhone2       string        `xml:"ReceiverPhone2,omitempty"`
+	ReceiverPhone3       string        `xml:"ReceiverPhone3,omitempty"`
+	VolumetricWeight     string        `xml:"VolumetricWeight"`
+	Weight               string        `xml:"Weight"`
+	CityCode             string        `xml:"CityCode,omitempty"`
+	TownCode             string        `xml:"TownCode,omitempty"`
+	IsCod                string        `xml:"IsCod"`
+	CodAmount            string        `xml:"CodAmount,omitempty"`
+	CodCollectionType    string        `xml:"CodCollectionType,omitempty"`
+	CodBillingType       string        `xml:"CodBillingType,omitempty"`
+	PayorTypeCode        string        `xml:"PayorTypeCode,omitempty"`
+	IsWorldWide          string        `xml:"IsWorldWide,omitempty"`
+	Description          string        `xml:"Description,omitempty"`
+	SpecialField1        string        `xml:"SpecialField1,omitempty"`
+	SpecialField2        string        `xml:"SpecialField2,omitempty"`
+	SpecialField3        string        `xml:"SpecialField3,omitempty"`
+	PieceCount           int           `xml:"PieceCount,omitempty"`
+	PieceDetails         *PieceDetails `xml:"PieceDetails,omitempty"`
+}
+
+// PieceDetails wraps a list of PieceDetail elements.
+type PieceDetails struct {
+	PieceDetail []PieceDetail `xml:"PieceDetail"`
+}
+
+// PieceDetail represents a single piece in a shipment.
+type PieceDetail struct {
+	VolumetricWeight string `xml:"VolumetricWeight"`
+	Weight           string `xml:"Weight"`
+	BarcodeNumber    string `xml:"BarcodeNumber"`
+	ProductNumber    string `xml:"ProductNumber,omitempty"`
+	Description      string `xml:"Description,omitempty"`
+}
+
+// SetOrderResponse is the SOAP response for SetOrder.
+type SetOrderResponse struct {
+	XMLName xml.Name       `xml:"SetOrderResponse"`
+	Result  SetOrderResult `xml:"SetOrderResult"`
+}
+
+// SetOrderResult wraps the order result info.
+type SetOrderResult struct {
+	OrderResultInfo *OrderResultInfo `xml:"OrderResultInfo"`
+}
+
+// OrderResultInfo contains the result of a SetOrder call.
+type OrderResultInfo struct {
+	IntegrationCode string `xml:"IntegrationCode"`
+	TrackingNumber  string `xml:"TrackingNumber"`
+	ResultCode      string `xml:"ResultCode"`
+	ResultMessage   string `xml:"ResultMessage"`
+}
+
+// ---------------------------------------------------------------------------
+// CancelDispatch SOAP types (shipment .asmx endpoint)
+// ---------------------------------------------------------------------------
+
+// CancelDispatchRequest is the SOAP request for cancelling a shipment via the .asmx endpoint.
+type CancelDispatchRequest struct {
+	XMLName           xml.Name `xml:"http://tempuri.org/ CancelDispatch"`
+	UserName          string   `xml:"userName"`
+	Password          string   `xml:"password"`
+	IntegrationCode   string   `xml:"integrationCode"`
+}
+
+// CancelDispatchResponse is the SOAP response for CancelDispatch.
+type CancelDispatchResponse struct {
+	XMLName xml.Name             `xml:"CancelDispatchResponse"`
+	Result  CancelDispatchResult `xml:"CancelDispatchResult"`
+}
+
+// CancelDispatchResult contains the result of a CancelDispatch call.
+type CancelDispatchResult struct {
+	ResultCode    string `xml:"ResultCode"`
+	ResultMessage string `xml:"ResultMessage"`
+}

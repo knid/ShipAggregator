@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/provider"
 )
 
 // ---------------------------------------------------------------------------
@@ -173,5 +174,79 @@ func IsRetryableError(resultCode string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetOrder result code mapping
+// ---------------------------------------------------------------------------
+
+// MapSetOrderResultCode maps a SetOrder ResultCode to an error.
+// Returns nil for success (ResultCode "0").
+func MapSetOrderResultCode(code, message string) error {
+	code = strings.TrimSpace(code)
+	if code == "" || code == "0" {
+		return nil
+	}
+	return &provider.ProviderError{
+		Code:            MapErrorCode(code),
+		Message:         message,
+		ProviderCode:    code,
+		ProviderMessage: message,
+		Retryable:       IsRetryableError(code),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CancelDispatch result code mapping
+// ---------------------------------------------------------------------------
+
+// MapCancelDispatchResultCode maps a CancelDispatch ResultCode to an error.
+// Returns nil for success (ResultCode "0" or "1").
+// Result codes per Aras docs:
+//
+//	0  = Success
+//	1  = "{orderCode} successfully deleted"
+//	-1 = Record not found
+//	-2 = Invalid username/password
+//	999 = Cannot cancel — waybill already issued
+//	936 = Error
+func MapCancelDispatchResultCode(code, message string) error {
+	code = strings.TrimSpace(code)
+	switch code {
+	case "0", "1":
+		return nil // success
+	case "-2":
+		return &provider.ProviderError{
+			Code:            "PROVIDER_AUTH_FAILED",
+			Message:         message,
+			ProviderCode:    code,
+			ProviderMessage: message,
+			Retryable:       false,
+		}
+	case "999":
+		return &provider.ProviderError{
+			Code:            "PROVIDER_REJECTED",
+			Message:         "cannot cancel — waybill already issued at branch",
+			ProviderCode:    code,
+			ProviderMessage: message,
+			Retryable:       false,
+		}
+	case "-1":
+		return &provider.ProviderError{
+			Code:            "PROVIDER_REJECTED",
+			Message:         "shipment not found",
+			ProviderCode:    code,
+			ProviderMessage: message,
+			Retryable:       false,
+		}
+	default:
+		return &provider.ProviderError{
+			Code:            MapErrorCode(code),
+			Message:         message,
+			ProviderCode:    code,
+			ProviderMessage: message,
+			Retryable:       IsRetryableError(code),
+		}
 	}
 }
