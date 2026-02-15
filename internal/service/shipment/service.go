@@ -194,6 +194,8 @@ func (s *Service) CreateFromOffer(ctx context.Context, req *CreateFromOfferReque
 		Parcel:             quote.Parcel,
 		CodAmountKurus:     quote.CodAmountKurus,
 		DeclaredValueKurus: quote.DeclaredValueKurus,
+		CodCollectionType:  quote.CodCollectionType,
+		CodInstallments:    quote.CodInstallments,
 		Status:             domain.ShipmentStatusDraft.String(),
 		Metadata:           metadataJSON,
 	})
@@ -319,6 +321,8 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		Parcel:             parcel,
 		ServiceCode:        shipment.ServiceCode,
 		CODAmountKurus:     codAmountKurus,
+		CODCollectionType:  shipment.CodCollectionType,
+		CODInstallments:    shipment.CodInstallments,
 		DeclaredValueKurus: declaredValueKurus,
 		Reference:          shipment.IdempotencyKey,
 		LabelFormat:        req.LabelFormat,

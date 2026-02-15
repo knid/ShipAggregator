@@ -41,6 +41,8 @@ type CreateQuoteRequest struct {
 	DestinationAddress *QuoteAddressRequest `json:"destination_address"`
 	Parcel             *QuoteParcelRequest  `json:"parcel"`
 	CODAmountKurus     *int32               `json:"cod_amount_kurus,omitempty"`
+	CODCollectionType  *string              `json:"cod_collection_type,omitempty"`
+	CODInstallments    *int32               `json:"cod_installments,omitempty"`
 	DeclaredValueKurus *int32               `json:"declared_value_kurus,omitempty"`
 	UseBYOA            bool                 `json:"use_byoa"`
 	ProviderAccountIDs []uuid.UUID          `json:"provider_account_ids,omitempty"`
@@ -108,6 +110,25 @@ func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
 		fieldErrors = append(fieldErrors, validateQuoteParcel(req.Parcel)...)
 	}
 
+	// Validate COD fields
+	if req.CODCollectionType != nil {
+		ct := *req.CODCollectionType
+		if ct != "cash" && ct != "credit_card" {
+			fieldErrors = append(fieldErrors, NewFieldError("cod_collection_type", "INVALID", "COD collection type must be 'cash' or 'credit_card'"))
+		}
+		if (req.CODAmountKurus == nil || *req.CODAmountKurus <= 0) {
+			fieldErrors = append(fieldErrors, NewFieldError("cod_collection_type", "INVALID", "COD collection type requires a positive cod_amount_kurus"))
+		}
+		if ct == "credit_card" && req.CODInstallments != nil && *req.CODInstallments < 1 {
+			fieldErrors = append(fieldErrors, NewFieldError("cod_installments", "INVALID", "COD installments must be >= 1"))
+		}
+	}
+	// Default cod_collection_type to "cash" when COD amount is set but type is not
+	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 && req.CODCollectionType == nil {
+		cash := "cash"
+		req.CODCollectionType = &cash
+	}
+
 	if len(fieldErrors) > 0 {
 		WriteError(w, r, NewValidationError("Validation failed", fieldErrors))
 		return
@@ -172,6 +193,8 @@ func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
 		DestinationAddress: destAddress,
 		Parcel:             parcel,
 		CODAmountKurus:     req.CODAmountKurus,
+		CODCollectionType:  req.CODCollectionType,
+		CODInstallments:    req.CODInstallments,
 		DeclaredValueKurus: req.DeclaredValueKurus,
 		UseBYOA:            req.UseBYOA,
 		ProviderAccountIDs: req.ProviderAccountIDs,
@@ -422,6 +445,8 @@ type QuoteResponse struct {
 	DestinationAddress json.RawMessage `json:"destination_address"`
 	Parcel             json.RawMessage `json:"parcel"`
 	CODAmountKurus     *int32          `json:"cod_amount_kurus,omitempty"`
+	CODCollectionType  *string         `json:"cod_collection_type,omitempty"`
+	CODInstallments    *int32          `json:"cod_installments,omitempty"`
 	DeclaredValueKurus *int32          `json:"declared_value_kurus,omitempty"`
 	UseBYOA            bool            `json:"use_byoa"`
 	Status             string          `json:"status"`
@@ -510,6 +535,8 @@ func quoteToResponse(q *db.Quote) QuoteResponse {
 		DestinationAddress: q.DestinationAddress,
 		Parcel:             q.Parcel,
 		CODAmountKurus:     q.CodAmountKurus,
+		CODCollectionType:  q.CodCollectionType,
+		CODInstallments:    q.CodInstallments,
 		DeclaredValueKurus: q.DeclaredValueKurus,
 		UseBYOA:            q.UseByoa,
 		Status:             q.Status,
