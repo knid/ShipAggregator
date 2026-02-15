@@ -589,7 +589,10 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 		for _, evt := range itemDetail.InvDocCargoVOArray {
 			occurredAt := parseYurticiDateTime(evt.EventDate, evt.EventTime)
 
-			rawData, _ := json.Marshal(evt)
+			rawData, err := json.Marshal(evt)
+			if err != nil {
+				a.logger.Warn("Failed to marshal raw tracking data", "error", err)
+			}
 
 			location := evt.CityName
 			locationDetail := evt.TownName
@@ -615,7 +618,10 @@ func (a *Adapter) GetTracking(ctx context.Context, req provider.GetTrackingReque
 
 	// If no historical events but we have a status, add a synthetic event
 	if len(events) == 0 {
-		rawData, _ := json.Marshal(detail)
+		rawData, err := json.Marshal(detail)
+		if err != nil {
+			a.logger.Warn("Failed to marshal raw tracking data", "error", err)
+		}
 		events = append(events, provider.TrackingEventData{
 			StatusCode:        currentStatus,
 			StatusDescription: MapOperationStatusDescription(detail.OperationStatus),
@@ -649,7 +655,10 @@ func (a *Adapter) ParseTrackingWebhook(_ context.Context, payload []byte) ([]pro
 
 	events := make([]provider.TrackingEventData, 0, len(webhookPayload.Events))
 	for _, e := range webhookPayload.Events {
-		rawData, _ := json.Marshal(e)
+		rawData, err := json.Marshal(e)
+		if err != nil {
+			a.logger.Warn("Failed to marshal raw tracking data", "error", err)
+		}
 		events = append(events, provider.TrackingEventData{
 			StatusCode:        MapStatus(e.StatusCode),
 			StatusDescription: MapStatusDescription(e.StatusCode),

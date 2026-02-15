@@ -167,10 +167,12 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 	// Check if payment client is configured
 	if s.paytrClient == nil {
 		failureReason := "Payment provider not configured"
-		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+		if _, err := s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 			ID:            dbTopup.ID,
 			FailureReason: &failureReason,
-		})
+		}); err != nil {
+			s.logger.Error("Failed to mark topup as failed", "topup_id", dbTopup.ID, "error", err)
+		}
 		return nil, fmt.Errorf("%w: payment provider not configured", ErrPaymentInitFailed)
 	}
 
@@ -199,10 +201,12 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 		if paytrErr, ok := err.(*paytr.PayTRError); ok {
 			failureReason = paytrErr.Reason
 		}
-		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+		if _, dbErr := s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 			ID:            dbTopup.ID,
 			FailureReason: &failureReason,
-		})
+		}); dbErr != nil {
+			s.logger.Error("Failed to mark topup as failed", "topup_id", dbTopup.ID, "error", dbErr)
+		}
 		return nil, fmt.Errorf("%w: %v", ErrPaymentInitFailed, err)
 	}
 
@@ -264,10 +268,12 @@ func (s *TopupService) ConfirmByMerchantOID(ctx context.Context, merchantOID, st
 	// Handle failure
 	if status != "success" {
 		failureReason := "Payment failed"
-		_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+		if _, err := s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 			ID:            dbTopup.ID,
 			FailureReason: &failureReason,
-		})
+		}); err != nil {
+			s.logger.Error("Failed to mark topup as failed", "topup_id", dbTopup.ID, "error", err)
+		}
 		return nil, fmt.Errorf("%w: payment status=%s", ErrPaymentConfirmFailed, status)
 	}
 
@@ -325,10 +331,12 @@ func (s *TopupService) FailByMerchantOID(ctx context.Context, merchantOID string
 	}
 
 	failureReason := "Payment failed via PayTR callback"
-	_, _ = s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
+	if _, err := s.queries.UpdateTopupFailed(ctx, db.UpdateTopupFailedParams{
 		ID:            topupID,
 		FailureReason: &failureReason,
-	})
+	}); err != nil {
+		s.logger.Error("Failed to mark topup as failed", "topup_id", topupID, "error", err)
+	}
 
 	s.logger.Info("Topup marked as failed via callback",
 		"topup_id", topupID,

@@ -348,12 +348,12 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.Post("/login", authHandler.Login)
 
 				r.Group(func(r chi.Router) {
-					/* r.Use(middleware.Auth(middleware.AuthConfig{
+					r.Use(middleware.Auth(middleware.AuthConfig{
 						APIKeyValidator:  cfg.APIKeyValidator,
 						SessionValidator: cfg.SessionValidator,
 						Logger:           cfg.Logger,
 						RequireAuth:      true,
-					})) */
+					}))
 					r.Post("/logout", authHandler.Logout)
 					r.Post("/logout-all", authHandler.LogoutAll)
 					r.Get("/me", authHandler.Me)
@@ -526,6 +526,28 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 					r.Get("/{id}", billingHandler.GetRefund)
 				})
 			}
+		})
+
+		// Label Settings routes (stub — feature not yet implemented)
+		r.Route("/label-settings", func(r chi.Router) {
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"format":"pdf","size":"a6","include_logo":false,"logo_url":null}`))
+			})
+			r.Patch("/", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"format":"pdf","size":"a6","include_logo":false,"logo_url":null}`))
+			})
+			r.Post("/logo", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotImplemented)
+				w.Write([]byte(`{"type":"about:blank","title":"Not Implemented","status":501,"detail":"Label logo upload is not yet implemented"}`))
+			})
+			r.Delete("/logo", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			})
 		})
 
 		// Stats routes (dashboard statistics)
