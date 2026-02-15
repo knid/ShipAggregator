@@ -112,6 +112,71 @@ func (h *TrackingPollHandler) ProcessTask(ctx context.Context, task *asynq.Task)
 	return nil
 }
 
+// ProcessStaleTask handles the stale tracking poll task.
+// It polls shipments that haven't been updated in 14-30 days, running less frequently.
+func (h *TrackingPollHandler) ProcessStaleTask(ctx context.Context, task *asynq.Task) error {
+	payload, err := ParseTrackingPollPayload(task)
+	if err != nil {
+		h.logger.Error("Failed to parse stale tracking poll payload", "error", err)
+		return fmt.Errorf("failed to parse payload: %w", err)
+	}
+
+	h.logger.Info("Starting stale tracking poll",
+		"provider_code", payload.ProviderCode,
+		"batch_size", payload.BatchSize,
+	)
+
+	var providerCodePtr *string
+	if payload.ProviderCode != "" {
+		providerCodePtr = &payload.ProviderCode
+	}
+
+	shipments, err := h.queries.ListStaleShipmentsForTrackingPoll(ctx, db.ListStaleShipmentsForTrackingPollParams{
+		ProviderCode: providerCodePtr,
+		LimitCount:   int32(payload.BatchSize),
+	})
+	if err != nil {
+		h.logger.Error("Failed to get stale shipments for tracking", "error", err)
+		return fmt.Errorf("failed to get stale shipments: %w", err)
+	}
+
+	if len(shipments) == 0 {
+		h.logger.Info("No stale shipments to poll for tracking")
+		return nil
+	}
+
+	h.logger.Info("Found stale shipments for tracking poll", "count", len(shipments))
+
+	var processedCount, errorCount int
+	for _, shipment := range shipments {
+		// Reuse the same polling logic via the shared row type
+		row := &db.ListShipmentsForTrackingPollRow{
+			ID:                     shipment.ID,
+			OrganizationID:         shipment.OrganizationID,
+			ProviderCode:           shipment.ProviderCode,
+			ProviderTrackingNumber: shipment.ProviderTrackingNumber,
+			Status:                 shipment.Status,
+		}
+		if err := h.pollShipmentTracking(ctx, row); err != nil {
+			h.logger.Warn("Failed to poll tracking for stale shipment",
+				"shipment_id", shipment.ID,
+				"error", err,
+			)
+			errorCount++
+			continue
+		}
+		processedCount++
+	}
+
+	h.logger.Info("Completed stale tracking poll",
+		"processed", processedCount,
+		"errors", errorCount,
+		"total", len(shipments),
+	)
+
+	return nil
+}
+
 // pollShipmentTracking polls tracking for a single shipment.
 func (h *TrackingPollHandler) pollShipmentTracking(ctx context.Context, shipment *db.ListShipmentsForTrackingPollRow) error {
 	// Skip if no tracking number

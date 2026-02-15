@@ -246,6 +246,17 @@ FROM shipments
 WHERE status IN ('label_purchased', 'pickup_scheduled', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
   AND provider_tracking_number IS NOT NULL
   AND (sqlc.narg('provider_code')::varchar IS NULL OR provider_code = sqlc.narg('provider_code')::varchar)
+  AND updated_at > NOW() - INTERVAL '14 days'
+ORDER BY updated_at ASC
+LIMIT sqlc.arg('limit_count')::int;
+
+-- name: ListStaleShipmentsForTrackingPoll :many
+SELECT id, organization_id, provider_code, provider_tracking_number, status
+FROM shipments
+WHERE status IN ('picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
+  AND provider_tracking_number IS NOT NULL
+  AND (sqlc.narg('provider_code')::varchar IS NULL OR provider_code = sqlc.narg('provider_code')::varchar)
+  AND updated_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '14 days'
 ORDER BY updated_at ASC
 LIMIT sqlc.arg('limit_count')::int;
 

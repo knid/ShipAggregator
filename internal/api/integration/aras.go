@@ -27,6 +27,7 @@ type ArasWebhookHandler struct {
 	trackingService *tracking.Service
 	webhookPub      *webhook.Publisher
 	logger          *observability.Logger
+	webhookSecret   string
 }
 
 // NewArasWebhookHandler creates a new Aras webhook handler.
@@ -36,6 +37,7 @@ func NewArasWebhookHandler(
 	trackingService *tracking.Service,
 	webhookPub *webhook.Publisher,
 	logger *observability.Logger,
+	webhookSecret string,
 ) *ArasWebhookHandler {
 	return &ArasWebhookHandler{
 		pool:            pool,
@@ -43,6 +45,7 @@ func NewArasWebhookHandler(
 		trackingService: trackingService,
 		webhookPub:      webhookPub,
 		logger:          logger,
+		webhookSecret:   webhookSecret,
 	}
 }
 
@@ -79,6 +82,13 @@ func (h *ArasWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer r.Body.Close()
+
+	// Verify webhook signature
+	if !VerifyWebhookSignature(body, r.Header.Get("X-Webhook-Signature"), h.webhookSecret) {
+		h.logger.Warn("Invalid Aras webhook signature")
+		http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
+		return
+	}
 
 	h.logger.Info("Received Aras tracking webhook",
 		"content_length", len(body),

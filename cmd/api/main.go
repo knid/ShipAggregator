@@ -394,6 +394,8 @@ func run() error {
 		ShopifyEnabled:              cfg.Features.ShopifyEnabled,
 		AsynqClient:                 asynqClient,
 		EncryptionKey:               cfg.Security.EncryptionKey,
+		ArasWebhookSecret:           cfg.Providers.Aras.WebhookSecret,
+		YurticiWebhookSecret:        cfg.Providers.Yurtici.WebhookSecret,
 	}
 
 	// Create router

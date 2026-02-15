@@ -363,6 +363,7 @@ type Querier interface {
 	ListShopifyOrderMappingsByStore(ctx context.Context, arg ListShopifyOrderMappingsByStoreParams) ([]*ListShopifyOrderMappingsByStoreRow, error)
 	ListShopifyShippingRulesByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*ShopifyShippingRule, error)
 	ListShopifyStoresByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*ListShopifyStoresByOrganizationRow, error)
+	ListStaleShipmentsForTrackingPoll(ctx context.Context, arg ListStaleShipmentsForTrackingPollParams) ([]*ListStaleShipmentsForTrackingPollRow, error)
 	ListSystemRoles(ctx context.Context) ([]*Role, error)
 	ListTopupsByDateRange(ctx context.Context, arg ListTopupsByDateRangeParams) ([]*Topup, error)
 	ListTopupsByOrganization(ctx context.Context, arg ListTopupsByOrganizationParams) ([]*Topup, error)

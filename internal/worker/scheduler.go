@@ -132,6 +132,18 @@ func (s *Scheduler) RegisterTasks() error {
 		return fmt.Errorf("failed to register tracking poll: %w", err)
 	}
 
+	// Stale tracking poll - runs every 6 hours for shipments inactive 14-30 days
+	if err := s.registerTask(
+		"@every 6h",
+		tasks.TypeTrackingPollStale,
+		nil,
+		asynq.Queue(tasks.QueueLow),
+		asynq.MaxRetry(3),
+		asynq.Timeout(10*time.Minute),
+	); err != nil {
+		return fmt.Errorf("failed to register stale tracking poll: %w", err)
+	}
+
 	// Idempotency cleanup - runs daily at 3:00 AM Turkey time
 	// Removes expired idempotency records (older than 24 hours)
 	if err := s.registerTask(

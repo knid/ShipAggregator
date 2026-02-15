@@ -747,6 +747,7 @@ FROM shipments
 WHERE status IN ('label_purchased', 'pickup_scheduled', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
   AND provider_tracking_number IS NOT NULL
   AND ($1::varchar IS NULL OR provider_code = $1::varchar)
+  AND updated_at > NOW() - INTERVAL '14 days'
 ORDER BY updated_at ASC
 LIMIT $2::int
 `
@@ -773,6 +774,56 @@ func (q *Queries) ListShipmentsForTrackingPoll(ctx context.Context, arg ListShip
 	items := []*ListShipmentsForTrackingPollRow{}
 	for rows.Next() {
 		var i ListShipmentsForTrackingPollRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ProviderCode,
+			&i.ProviderTrackingNumber,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStaleShipmentsForTrackingPoll = `-- name: ListStaleShipmentsForTrackingPoll :many
+SELECT id, organization_id, provider_code, provider_tracking_number, status
+FROM shipments
+WHERE status IN ('picked_up', 'in_transit', 'at_hub', 'out_for_delivery')
+  AND provider_tracking_number IS NOT NULL
+  AND ($1::varchar IS NULL OR provider_code = $1::varchar)
+  AND updated_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '14 days'
+ORDER BY updated_at ASC
+LIMIT $2::int
+`
+
+type ListStaleShipmentsForTrackingPollParams struct {
+	ProviderCode *string `db:"provider_code" json:"provider_code"`
+	LimitCount   int32   `db:"limit_count" json:"limit_count"`
+}
+
+type ListStaleShipmentsForTrackingPollRow struct {
+	ID                     uuid.UUID `db:"id" json:"id"`
+	OrganizationID         uuid.UUID `db:"organization_id" json:"organization_id"`
+	ProviderCode           string    `db:"provider_code" json:"provider_code"`
+	ProviderTrackingNumber *string   `db:"provider_tracking_number" json:"provider_tracking_number"`
+	Status                 string    `db:"status" json:"status"`
+}
+
+func (q *Queries) ListStaleShipmentsForTrackingPoll(ctx context.Context, arg ListStaleShipmentsForTrackingPollParams) ([]*ListStaleShipmentsForTrackingPollRow, error) {
+	rows, err := q.db.Query(ctx, listStaleShipmentsForTrackingPoll, arg.ProviderCode, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListStaleShipmentsForTrackingPollRow{}
+	for rows.Next() {
+		var i ListStaleShipmentsForTrackingPollRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,

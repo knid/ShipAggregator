@@ -35,8 +35,9 @@ const (
 	TypeWebhookDLQ      = "webhook:dlq"      // Process dead-letter queue entries
 
 	// Tracking tasks
-	TypeTrackingPoll   = "tracking:poll"   // Poll providers for tracking updates
-	TypeTrackingUpdate = "tracking:update" // Process a single tracking update
+	TypeTrackingPoll      = "tracking:poll"       // Poll providers for tracking updates
+	TypeTrackingPollStale = "tracking:poll_stale"  // Poll stale shipments (14-30 days old) less frequently
+	TypeTrackingUpdate    = "tracking:update"      // Process a single tracking update
 
 	// Outbox tasks
 	TypeOutboxPublish = "outbox:publish" // Publish pending outbox events
@@ -70,7 +71,8 @@ const (
 const (
 	TimeoutWebhookDelivery = 30 * time.Second
 	TimeoutWebhookRetry    = 5 * time.Minute
-	TimeoutTrackingPoll    = 10 * time.Minute
+	TimeoutTrackingPoll      = 10 * time.Minute
+	TimeoutTrackingPollStale = 10 * time.Minute
 	TimeoutTrackingUpdate  = 2 * time.Minute
 	TimeoutOutboxPublish   = 30 * time.Second
 	TimeoutIdempotency     = 30 * time.Minute
@@ -90,7 +92,8 @@ const (
 const (
 	MaxRetryWebhookDelivery = 7 // Matches webhook retry schedule
 	MaxRetryWebhookRetry    = 3 // Retry the retry job itself
-	MaxRetryTrackingPoll    = 3 // Polling can be retried
+	MaxRetryTrackingPoll      = 3 // Polling can be retried
+	MaxRetryTrackingPollStale = 3 // Stale polling can be retried
 	MaxRetryTrackingUpdate  = 5 // Individual updates can retry more
 	MaxRetryOutboxPublish   = 3 // Outbox publishing
 	MaxRetryIdempotency     = 3 // Cleanup jobs

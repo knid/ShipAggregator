@@ -25,6 +25,7 @@ type YurticiWebhookHandler struct {
 	trackingService *tracking.Service
 	webhookPub      *webhook.Publisher
 	logger          *observability.Logger
+	webhookSecret   string
 }
 
 // NewYurticiWebhookHandler creates a new Yurtiçi webhook handler.
@@ -34,6 +35,7 @@ func NewYurticiWebhookHandler(
 	trackingService *tracking.Service,
 	webhookPub *webhook.Publisher,
 	logger *observability.Logger,
+	webhookSecret string,
 ) *YurticiWebhookHandler {
 	return &YurticiWebhookHandler{
 		pool:            pool,
@@ -41,6 +43,7 @@ func NewYurticiWebhookHandler(
 		trackingService: trackingService,
 		webhookPub:      webhookPub,
 		logger:          logger,
+		webhookSecret:   webhookSecret,
 	}
 }
 
@@ -78,6 +81,13 @@ func (h *YurticiWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer r.Body.Close()
+
+	// Verify webhook signature
+	if !VerifyWebhookSignature(body, r.Header.Get("X-Webhook-Signature"), h.webhookSecret) {
+		h.logger.Warn("Invalid Yurtiçi webhook signature")
+		http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
+		return
+	}
 
 	h.logger.Info("Received Yurtiçi tracking webhook",
 		"content_length", len(body),

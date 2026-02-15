@@ -262,6 +262,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 
 	// Register tracking handlers
 	mux.HandleFunc(tasks.TypeTrackingPoll, trackingPollHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeTrackingPollStale, trackingPollHandler.ProcessStaleTask)
 	mux.HandleFunc(tasks.TypeTrackingUpdate, trackingUpdateHandler.ProcessTask)
 
 	// Register outbox handlers

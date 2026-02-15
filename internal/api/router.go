@@ -109,6 +109,10 @@ type RouterConfig struct {
 	AsynqClient *asynq.Client
 	// EncryptionKey is the 32-byte AES key for encrypting credentials.
 	EncryptionKey []byte
+	// ArasWebhookSecret is the HMAC secret for Aras webhook signature verification.
+	ArasWebhookSecret string
+	// YurticiWebhookSecret is the HMAC secret for Yurtici webhook signature verification.
+	YurticiWebhookSecret string
 }
 
 // NewRouter creates a new API router with all middleware and routes configured.
@@ -261,6 +265,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			cfg.TrackingService,
 			cfg.WebhookPublisher,
 			cfg.Logger,
+			cfg.ArasWebhookSecret,
 		)
 		yurticiWebhookHandler = integration.NewYurticiWebhookHandler(
 			cfg.DBPool,
@@ -268,6 +273,7 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			cfg.TrackingService,
 			cfg.WebhookPublisher,
 			cfg.Logger,
+			cfg.YurticiWebhookSecret,
 		)
 	}
 

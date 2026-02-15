@@ -187,6 +187,7 @@ type ProviderConfig struct {
 	CustomerID     string
 	CustomerNumber string
 	UserLanguage   string
+	WebhookSecret  string // HMAC secret for webhook signature verification
 }
 
 // ProvidersConfig holds all provider configurations.
@@ -346,16 +347,18 @@ func Load() (*Config, error) {
 
 	// Provider configs
 	cfg.Providers.Aras = ProviderConfig{
-		WSDLURL:      os.Getenv("ARAS_WSDL_URL"),
-		Username:     os.Getenv("ARAS_USERNAME"),
-		Password:     os.Getenv("ARAS_PASSWORD"),
-		CustomerCode: os.Getenv("ARAS_CUSTOMER_CODE"),
+		WSDLURL:       os.Getenv("ARAS_WSDL_URL"),
+		Username:      os.Getenv("ARAS_USERNAME"),
+		Password:      os.Getenv("ARAS_PASSWORD"),
+		CustomerCode:  os.Getenv("ARAS_CUSTOMER_CODE"),
+		WebhookSecret: os.Getenv("ARAS_WEBHOOK_SECRET"),
 	}
 	cfg.Providers.Yurtici = ProviderConfig{
-		WSDLURL:      os.Getenv("YURTICI_WSDL_URL"),
-		Username:     os.Getenv("YURTICI_USERNAME"),
-		Password:     os.Getenv("YURTICI_PASSWORD"),
-		UserLanguage: getEnvOrDefault("YURTICI_USER_LANGUAGE", "TR"),
+		WSDLURL:       os.Getenv("YURTICI_WSDL_URL"),
+		Username:      os.Getenv("YURTICI_USERNAME"),
+		Password:      os.Getenv("YURTICI_PASSWORD"),
+		UserLanguage:  getEnvOrDefault("YURTICI_USER_LANGUAGE", "TR"),
+		WebhookSecret: os.Getenv("YURTICI_WEBHOOK_SECRET"),
 	}
 
 	// Feature flags
