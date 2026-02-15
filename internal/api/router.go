@@ -14,6 +14,7 @@ import (
 	"github.com/knid/kargonet/internal/api/handler"
 	"github.com/knid/kargonet/internal/api/integration"
 	"github.com/knid/kargonet/internal/api/middleware"
+	"github.com/knid/kargonet/internal/config"
 	"github.com/knid/kargonet/internal/observability"
 	"github.com/knid/kargonet/internal/payment/paytr"
 	"github.com/knid/kargonet/internal/repository/postgres"
@@ -27,6 +28,8 @@ import (
 	"github.com/knid/kargonet/internal/service/shipment"
 	"github.com/knid/kargonet/internal/service/tracking"
 	"github.com/knid/kargonet/internal/service/webhook"
+
+	"github.com/hibiken/asynq"
 )
 
 //go:embed openapi.json
@@ -98,6 +101,14 @@ type RouterConfig struct {
 	IdempotencyTTL time.Duration
 	// Environment is the deployment environment (development, staging, production).
 	Environment string
+	// ShopifyConfig holds Shopify app configuration.
+	ShopifyConfig config.ShopifyConfig
+	// ShopifyEnabled controls whether Shopify integration routes are registered.
+	ShopifyEnabled bool
+	// AsynqClient is the async task client for enqueuing background jobs.
+	AsynqClient *asynq.Client
+	// EncryptionKey is the 32-byte AES key for encrypting credentials.
+	EncryptionKey []byte
 }
 
 // NewRouter creates a new API router with all middleware and routes configured.
@@ -638,6 +649,26 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
+		// Shopify routes (store management, order mappings, rules)
+		if cfg.ShopifyEnabled && cfg.Queries != nil {
+			shopifyHandler := handler.NewShopifyHandler(cfg.Queries, cfg.Logger)
+			r.Route("/shopify", func(r chi.Router) {
+				r.Use(middleware.RequireScope("shopify:read"))
+				r.Get("/stores", shopifyHandler.ListStores)
+				r.Get("/stores/{id}", shopifyHandler.GetStore)
+				r.With(middleware.RequireScope("shopify:write")).Patch("/stores/{id}", shopifyHandler.UpdateStore)
+				r.With(middleware.RequireScope("shopify:write")).Delete("/stores/{id}", shopifyHandler.DeleteStore)
+				r.Get("/stores/{id}/orders", shopifyHandler.ListOrders)
+				r.With(middleware.RequireScope("shopify:write")).Post("/stores/{id}/orders/{mappingId}/retry", shopifyHandler.RetryOrder)
+				r.With(middleware.RequireScope("shopify:write")).Post("/stores/{id}/orders/{mappingId}/link", shopifyHandler.LinkOrder)
+				r.Get("/stores/{id}/stats", shopifyHandler.GetStoreStats)
+				r.Get("/rules", shopifyHandler.ListRules)
+				r.With(middleware.RequireScope("shopify:write")).Post("/rules", shopifyHandler.CreateRule)
+				r.With(middleware.RequireScope("shopify:write")).Put("/rules/{id}", shopifyHandler.UpdateRule)
+				r.With(middleware.RequireScope("shopify:write")).Delete("/rules/{id}", shopifyHandler.DeleteRule)
+			})
+		}
+
 		// Admin routes (US10: Admin Tools)
 		r.Route("/admin", func(r chi.Router) {
 			if adminHandler != nil {
@@ -715,6 +746,21 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 				r.Post("/poll-tracking", adminHandler.PollTracking)
 			}
 		})
+
+		// Shopify integration endpoints (webhook + store registration)
+		if cfg.ShopifyEnabled && cfg.AsynqClient != nil {
+			shopifyWebhookHandler := integration.NewShopifyWebhookHandler(
+				cfg.Queries,
+				cfg.AsynqClient,
+				cfg.EncryptionKey,
+				cfg.ShopifyConfig,
+				cfg.Logger,
+			)
+			r.Route("/shopify", func(r chi.Router) {
+				r.Post("/webhook", shopifyWebhookHandler.HandleWebhook)
+				r.Post("/register-store", shopifyWebhookHandler.HandleRegisterStore)
+			})
+		}
 	})
 
 	// Not found handler

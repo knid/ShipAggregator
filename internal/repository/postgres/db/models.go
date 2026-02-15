@@ -569,6 +569,66 @@ type Shipment struct {
 	CodInstallments    *int32             `db:"cod_installments" json:"cod_installments"`
 }
 
+type ShopifyOrderMapping struct {
+	ID                     uuid.UUID          `db:"id" json:"id"`
+	OrganizationID         uuid.UUID          `db:"organization_id" json:"organization_id"`
+	ShopifyStoreID         uuid.UUID          `db:"shopify_store_id" json:"shopify_store_id"`
+	ShopifyOrderID         int64              `db:"shopify_order_id" json:"shopify_order_id"`
+	ShopifyOrderNumber     *string            `db:"shopify_order_number" json:"shopify_order_number"`
+	ShipmentID             pgtype.UUID        `db:"shipment_id" json:"shipment_id"`
+	Status                 string             `db:"status" json:"status"`
+	SyncError              *string            `db:"sync_error" json:"sync_error"`
+	ShopifyCustomerName    *string            `db:"shopify_customer_name" json:"shopify_customer_name"`
+	ShopifyOrderTotalKurus *int64             `db:"shopify_order_total_kurus" json:"shopify_order_total_kurus"`
+	ShopifyLineItemCount   *int32             `db:"shopify_line_item_count" json:"shopify_line_item_count"`
+	ShopifyFulfillmentID   *int64             `db:"shopify_fulfillment_id" json:"shopify_fulfillment_id"`
+	FulfillmentSyncedAt    pgtype.Timestamptz `db:"fulfillment_synced_at" json:"fulfillment_synced_at"`
+	RawOrder               []byte             `db:"raw_order" json:"raw_order"`
+	CreatedAt              pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+type ShopifyShippingRule struct {
+	ID                            uuid.UUID          `db:"id" json:"id"`
+	OrganizationID                uuid.UUID          `db:"organization_id" json:"organization_id"`
+	ShopifyStoreID                pgtype.UUID        `db:"shopify_store_id" json:"shopify_store_id"`
+	Name                          string             `db:"name" json:"name"`
+	Priority                      int32              `db:"priority" json:"priority"`
+	IsActive                      bool               `db:"is_active" json:"is_active"`
+	ConditionDestinationCityCodes []string           `db:"condition_destination_city_codes" json:"condition_destination_city_codes"`
+	ConditionMinWeightGrams       *int32             `db:"condition_min_weight_grams" json:"condition_min_weight_grams"`
+	ConditionMaxWeightGrams       *int32             `db:"condition_max_weight_grams" json:"condition_max_weight_grams"`
+	ConditionMinOrderTotalKurus   *int64             `db:"condition_min_order_total_kurus" json:"condition_min_order_total_kurus"`
+	ConditionMaxOrderTotalKurus   *int64             `db:"condition_max_order_total_kurus" json:"condition_max_order_total_kurus"`
+	ConditionHasCod               *bool              `db:"condition_has_cod" json:"condition_has_cod"`
+	ConditionTags                 []string           `db:"condition_tags" json:"condition_tags"`
+	ActionProviderCode            string             `db:"action_provider_code" json:"action_provider_code"`
+	ActionServiceCode             *string            `db:"action_service_code" json:"action_service_code"`
+	ActionProviderAccountID       pgtype.UUID        `db:"action_provider_account_id" json:"action_provider_account_id"`
+	CreatedAt                     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+type ShopifyStore struct {
+	ID                   uuid.UUID          `db:"id" json:"id"`
+	OrganizationID       uuid.UUID          `db:"organization_id" json:"organization_id"`
+	ShopDomain           string             `db:"shop_domain" json:"shop_domain"`
+	AccessTokenEncrypted []byte             `db:"access_token_encrypted" json:"access_token_encrypted"`
+	AccessTokenIv        []byte             `db:"access_token_iv" json:"access_token_iv"`
+	Scopes               *string            `db:"scopes" json:"scopes"`
+	ShopifyStoreID       *int64             `db:"shopify_store_id" json:"shopify_store_id"`
+	StoreName            *string            `db:"store_name" json:"store_name"`
+	StoreEmail           *string            `db:"store_email" json:"store_email"`
+	Currency             *string            `db:"currency" json:"currency"`
+	Status               string             `db:"status" json:"status"`
+	SyncMode             string             `db:"sync_mode" json:"sync_mode"`
+	InstalledAt          pgtype.Timestamptz `db:"installed_at" json:"installed_at"`
+	UninstalledAt        pgtype.Timestamptz `db:"uninstalled_at" json:"uninstalled_at"`
+	LastSyncAt           pgtype.Timestamptz `db:"last_sync_at" json:"last_sync_at"`
+	CreatedAt            pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 // Wallet funding requests
 type Topup struct {
 	ID             uuid.UUID `db:"id" json:"id"`

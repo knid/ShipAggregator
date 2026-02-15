@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -346,6 +347,17 @@ func run() error {
 		logger.Warn("BYOA feature enabled but ENCRYPTION_KEY not configured, provider accounts disabled")
 	}
 
+	// Initialize Asynq client for enqueuing tasks (needed for Shopify webhooks)
+	var asynqClient *asynq.Client
+	if cfg.Redis.URL != "" {
+		redisOpts, _ := redis.ParseURL(cfg.Redis.URL)
+		asynqClient = asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password, DB: redisOpts.DB})
+	} else {
+		asynqClient = asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Redis.Addr(), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	}
+	defer asynqClient.Close()
+	logger.Info("asynq client initialized for task enqueueing")
+
 	// Create router configuration
 	routerCfg := api.RouterConfig{
 		Logger:                      logger,
@@ -378,6 +390,10 @@ func run() error {
 		RateLimitPerMinute:          cfg.RateLimit.RequestsPerSecond * 60,
 		IdempotencyTTL:              cfg.Idempotency.TTL,
 		Environment:                 string(cfg.App.Env),
+		ShopifyConfig:               cfg.Shopify,
+		ShopifyEnabled:              cfg.Features.ShopifyEnabled,
+		AsynqClient:                 asynqClient,
+		EncryptionKey:               cfg.Security.EncryptionKey,
 	}
 
 	// Create router

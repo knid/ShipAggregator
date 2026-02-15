@@ -49,6 +49,8 @@ type Querier interface {
 	CountProviderApiLogs(ctx context.Context, arg CountProviderApiLogsParams) (int64, error)
 	CountQuotesByOrganization(ctx context.Context, arg CountQuotesByOrganizationParams) (int64, error)
 	CountShipmentsByOrganization(ctx context.Context, arg CountShipmentsByOrganizationParams) (int64, error)
+	CountShopifyOrderMappingsByStore(ctx context.Context, arg CountShopifyOrderMappingsByStoreParams) (int64, error)
+	CountShopifyOrdersByStatus(ctx context.Context, shopifyStoreID uuid.UUID) ([]*CountShopifyOrdersByStatusRow, error)
 	CountTopupsByOrganization(ctx context.Context, arg CountTopupsByOrganizationParams) (int64, error)
 	CountTrackingEventsByShipment(ctx context.Context, shipmentID uuid.UUID) (int64, error)
 	CountWebhookDeliveriesByOrganization(ctx context.Context, arg CountWebhookDeliveriesByOrganizationParams) (int64, error)
@@ -78,6 +80,9 @@ type Querier interface {
 	CreateRole(ctx context.Context, arg CreateRoleParams) (*Role, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (*Session, error)
 	CreateShipment(ctx context.Context, arg CreateShipmentParams) (*Shipment, error)
+	CreateShopifyOrderMapping(ctx context.Context, arg CreateShopifyOrderMappingParams) (*ShopifyOrderMapping, error)
+	CreateShopifyShippingRule(ctx context.Context, arg CreateShopifyShippingRuleParams) (*ShopifyShippingRule, error)
+	CreateShopifyStore(ctx context.Context, arg CreateShopifyStoreParams) (*ShopifyStore, error)
 	CreateTopup(ctx context.Context, arg CreateTopupParams) (*Topup, error)
 	CreateTrackingEvent(ctx context.Context, arg CreateTrackingEventParams) (*TrackingEvent, error)
 	CreateTrackingEventsBatch(ctx context.Context, arg []CreateTrackingEventsBatchParams) (int64, error)
@@ -104,6 +109,8 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteSessionsByMember(ctx context.Context, memberID uuid.UUID) error
+	DeleteShopifyShippingRule(ctx context.Context, arg DeleteShopifyShippingRuleParams) error
+	DeleteShopifyStore(ctx context.Context, arg DeleteShopifyStoreParams) error
 	DeleteTrackingEventsByShipment(ctx context.Context, shipmentID uuid.UUID) error
 	DeleteWebhookEndpoint(ctx context.Context, id uuid.UUID) error
 	DeleteWebhookSubscription(ctx context.Context, id uuid.UUID) error
@@ -244,6 +251,18 @@ type Querier interface {
 	// These queries aggregate data for the dashboard overview
 	GetShipmentStats(ctx context.Context, arg GetShipmentStatsParams) (*GetShipmentStatsRow, error)
 	GetShipmentStatsByProvider(ctx context.Context, arg GetShipmentStatsByProviderParams) ([]*GetShipmentStatsByProviderRow, error)
+	// Shopify Order Mappings CRUD queries
+	// Table: shopify_order_mappings
+	GetShopifyOrderMappingByID(ctx context.Context, id uuid.UUID) (*ShopifyOrderMapping, error)
+	GetShopifyOrderMappingByOrderID(ctx context.Context, arg GetShopifyOrderMappingByOrderIDParams) (*ShopifyOrderMapping, error)
+	GetShopifyOrderMappingByShipmentID(ctx context.Context, shipmentID pgtype.UUID) (*ShopifyOrderMapping, error)
+	// Shopify Shipping Rules CRUD queries
+	// Table: shopify_shipping_rules
+	GetShopifyShippingRuleByID(ctx context.Context, id uuid.UUID) (*ShopifyShippingRule, error)
+	// Shopify Stores CRUD queries
+	// Table: shopify_stores
+	GetShopifyStoreByID(ctx context.Context, id uuid.UUID) (*ShopifyStore, error)
+	GetShopifyStoreByShopDomain(ctx context.Context, shopDomain string) (*ShopifyStore, error)
 	GetSystemRoleByName(ctx context.Context, name string) (*Role, error)
 	// Topups CRUD queries
 	// Table: topups
@@ -279,11 +298,13 @@ type Querier interface {
 	GetWebhookSubscriptionByID(ctx context.Context, id uuid.UUID) (*WebhookSubscription, error)
 	HardDeleteExpiredAddresses(ctx context.Context) error
 	HardDeleteExpiredProviderAccounts(ctx context.Context) error
+	LinkShopifyOrderToShipment(ctx context.Context, arg LinkShopifyOrderToShipmentParams) error
 	ListAPIKeysByOrganization(ctx context.Context, arg ListAPIKeysByOrganizationParams) ([]*ApiKey, error)
 	ListActiveOffersByQuote(ctx context.Context, quoteID uuid.UUID) ([]*Offer, error)
 	ListActiveProviderServices(ctx context.Context, providerCode string) ([]*ProviderService, error)
 	ListActiveProviders(ctx context.Context) ([]*Provider, error)
 	ListActiveShipmentsByProvider(ctx context.Context, arg ListActiveShipmentsByProviderParams) ([]*ListActiveShipmentsByProviderRow, error)
+	ListActiveShopifyShippingRules(ctx context.Context, arg ListActiveShopifyShippingRulesParams) ([]*ShopifyShippingRule, error)
 	ListActiveWebhookEndpointsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*WebhookEndpoint, error)
 	ListActiveWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) ([]*WebhookSubscription, error)
 	ListAddressesByOrganization(ctx context.Context, arg ListAddressesByOrganizationParams) ([]*ListAddressesByOrganizationRow, error)
@@ -319,6 +340,7 @@ type Querier interface {
 	ListOrphanedDocuments(ctx context.Context, limitCount int32) ([]*Document, error)
 	ListOutboxMessagesByAggregateID(ctx context.Context, arg ListOutboxMessagesByAggregateIDParams) ([]*Outbox, error)
 	ListPendingCODSettlements(ctx context.Context, arg ListPendingCODSettlementsParams) ([]*CodSettlement, error)
+	ListPendingFulfillmentSyncs(ctx context.Context, limitCount int32) ([]*ListPendingFulfillmentSyncsRow, error)
 	ListPendingOutboxMessages(ctx context.Context, limitCount int32) ([]*Outbox, error)
 	ListPendingWebhookDeliveries(ctx context.Context, limitCount int32) ([]*WebhookDelivery, error)
 	ListPostalCodesByDistrict(ctx context.Context, districtCode string) ([]*RefPostalCode, error)
@@ -338,6 +360,9 @@ type Querier interface {
 	ListShipmentsByDateRange(ctx context.Context, arg ListShipmentsByDateRangeParams) ([]*Shipment, error)
 	ListShipmentsByOrganization(ctx context.Context, arg ListShipmentsByOrganizationParams) ([]*Shipment, error)
 	ListShipmentsForTrackingPoll(ctx context.Context, arg ListShipmentsForTrackingPollParams) ([]*ListShipmentsForTrackingPollRow, error)
+	ListShopifyOrderMappingsByStore(ctx context.Context, arg ListShopifyOrderMappingsByStoreParams) ([]*ListShopifyOrderMappingsByStoreRow, error)
+	ListShopifyShippingRulesByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*ShopifyShippingRule, error)
+	ListShopifyStoresByOrganization(ctx context.Context, organizationID uuid.UUID) ([]*ListShopifyStoresByOrganizationRow, error)
 	ListSystemRoles(ctx context.Context) ([]*Role, error)
 	ListTopupsByDateRange(ctx context.Context, arg ListTopupsByDateRangeParams) ([]*Topup, error)
 	ListTopupsByOrganization(ctx context.Context, arg ListTopupsByOrganizationParams) ([]*Topup, error)
@@ -353,6 +378,7 @@ type Querier interface {
 	ListWebhookSubscriptionsByEndpoint(ctx context.Context, endpointID uuid.UUID) ([]*WebhookSubscription, error)
 	ListWebhookSubscriptionsByEventType(ctx context.Context, eventType string) ([]*ListWebhookSubscriptionsByEventTypeRow, error)
 	ListWebhookSubscriptionsByOrganizationAndEventType(ctx context.Context, arg ListWebhookSubscriptionsByOrganizationAndEventTypeParams) ([]*ListWebhookSubscriptionsByOrganizationAndEventTypeRow, error)
+	MarkShopifyStoreUninstalled(ctx context.Context, shopDomain string) error
 	ReactivateMember(ctx context.Context, id uuid.UUID) (*Member, error)
 	RemoveMember(ctx context.Context, id uuid.UUID) (*Member, error)
 	ReplayDLQWebhookDeliveries(ctx context.Context, organizationID pgtype.UUID) error
@@ -400,6 +426,11 @@ type Querier interface {
 	UpdateShipmentPickupScheduled(ctx context.Context, arg UpdateShipmentPickupScheduledParams) (*Shipment, error)
 	UpdateShipmentReturnLink(ctx context.Context, arg UpdateShipmentReturnLinkParams) (*Shipment, error)
 	UpdateShipmentStatus(ctx context.Context, arg UpdateShipmentStatusParams) (*Shipment, error)
+	UpdateShopifyOrderFulfillment(ctx context.Context, arg UpdateShopifyOrderFulfillmentParams) error
+	UpdateShopifyOrderMappingStatus(ctx context.Context, arg UpdateShopifyOrderMappingStatusParams) error
+	UpdateShopifyShippingRule(ctx context.Context, arg UpdateShopifyShippingRuleParams) (*ShopifyShippingRule, error)
+	UpdateShopifyStore(ctx context.Context, arg UpdateShopifyStoreParams) (*ShopifyStore, error)
+	UpdateShopifyStoreLastSync(ctx context.Context, id uuid.UUID) error
 	UpdateTopupCancelled(ctx context.Context, id uuid.UUID) (*Topup, error)
 	UpdateTopupCompleted(ctx context.Context, arg UpdateTopupCompletedParams) (*Topup, error)
 	UpdateTopupFailed(ctx context.Context, arg UpdateTopupFailedParams) (*Topup, error)

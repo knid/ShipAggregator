@@ -38,6 +38,7 @@ type Config struct {
 	PayTR         PayTRConfig
 	Providers     ProvidersConfig
 	Features      FeaturesConfig
+	Shopify       ShopifyConfig
 	CORS          CORSConfig
 	Retention     RetentionConfig
 }
@@ -201,6 +202,18 @@ type FeaturesConfig struct {
 	CODEnabled      bool
 	BYOAEnabled     bool
 	WebhooksEnabled bool
+	ShopifyEnabled  bool
+}
+
+// ShopifyConfig holds Shopify app configuration.
+type ShopifyConfig struct {
+	APIKey        string
+	APISecret     string
+	Scopes        string
+	RedirectURI   string
+	AppURL        string
+	APIVersion    string
+	ServiceSecret string // Shared secret for embedded app → backend auth
 }
 
 // CORSConfig holds CORS configuration.
@@ -351,6 +364,16 @@ func Load() (*Config, error) {
 	cfg.Features.CODEnabled = getEnvBool("FEATURE_COD_ENABLED", true)
 	cfg.Features.BYOAEnabled = getEnvBool("FEATURE_BYOA_ENABLED", true)
 	cfg.Features.WebhooksEnabled = getEnvBool("FEATURE_WEBHOOKS_ENABLED", true)
+	cfg.Features.ShopifyEnabled = getEnvBool("FEATURE_SHOPIFY_ENABLED", false)
+
+	// Shopify config
+	cfg.Shopify.APIKey = os.Getenv("SHOPIFY_API_KEY")
+	cfg.Shopify.APISecret = os.Getenv("SHOPIFY_API_SECRET")
+	cfg.Shopify.Scopes = getEnvOrDefault("SHOPIFY_SCOPES", "read_orders,write_fulfillments,read_shipping")
+	cfg.Shopify.RedirectURI = os.Getenv("SHOPIFY_REDIRECT_URI")
+	cfg.Shopify.AppURL = os.Getenv("SHOPIFY_APP_URL")
+	cfg.Shopify.APIVersion = getEnvOrDefault("SHOPIFY_API_VERSION", "2024-10")
+	cfg.Shopify.ServiceSecret = os.Getenv("SHOPIFY_SERVICE_SECRET")
 
 	// CORS config
 	cfg.CORS.Enabled = getEnvBool("CORS_ENABLED", true)

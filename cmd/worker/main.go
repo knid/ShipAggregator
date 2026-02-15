@@ -19,6 +19,7 @@ import (
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/repository/postgres/db"
 	redisrepo "github.com/knid/kargonet/internal/repository/redis"
+	shopifyservice "github.com/knid/kargonet/internal/service/shopify"
 	"github.com/knid/kargonet/internal/service/tracking"
 	"github.com/knid/kargonet/internal/service/webhook"
 	"github.com/knid/kargonet/internal/worker"
@@ -325,6 +326,24 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 
 	// Register outbox cleanup handler (internal task)
 	mux.HandleFunc("outbox:cleanup", outboxCleanupHandler.ProcessTask)
+
+	// Register Shopify task handlers
+	if deps.cfg.Features.ShopifyEnabled {
+		shopifySvc := shopifyservice.NewService(
+			deps.queries,
+			deps.cfg.Security.EncryptionKey,
+			deps.cfg.Shopify.APIVersion,
+			deps.logger,
+		)
+		shopifyOrderHandler := tasks.NewShopifyOrderHandler(shopifySvc, deps.logger)
+		shopifyFulfillmentHandler := tasks.NewShopifyFulfillmentHandler(shopifySvc, deps.queries, deps.asynqClient, deps.logger)
+
+		mux.HandleFunc(tasks.TypeShopifyOrderProcess, shopifyOrderHandler.ProcessOrderTask)
+		mux.HandleFunc(tasks.TypeShopifyOrderCancel, shopifyOrderHandler.ProcessCancelTask)
+		mux.HandleFunc(tasks.TypeShopifyFulfillmentSync, shopifyFulfillmentHandler.ProcessSyncTask)
+		mux.HandleFunc(tasks.TypeShopifyFulfillmentRetry, shopifyFulfillmentHandler.ProcessRetryTask)
+		deps.logger.Info("shopify task handlers registered")
+	}
 
 	deps.logger.Info("all task handlers registered")
 }

@@ -57,6 +57,12 @@ const (
 	// Notification tasks
 	TypeAPIKeyExpiryNotification = "notification:apikey_expiry" // Notify about expiring API keys
 	TypeWebhookFailureAlert      = "notification:webhook_fail"  // Alert on webhook delivery failures
+
+	// Shopify tasks
+	TypeShopifyOrderProcess    = "shopify:order_process"    // Process incoming Shopify order
+	TypeShopifyOrderCancel     = "shopify:order_cancel"     // Handle Shopify order cancellation
+	TypeShopifyFulfillmentSync = "shopify:fulfillment_sync" // Sync fulfillment back to Shopify
+	TypeShopifyFulfillmentRetry = "shopify:fulfillment_retry" // Retry failed fulfillment syncs
 )
 
 // Task timeout constants.
@@ -72,7 +78,11 @@ const (
 	TimeoutReconciliation  = 1 * time.Hour
 	TimeoutProviderHealth  = 5 * time.Minute
 	TimeoutLabelGeneration = 2 * time.Minute
-	TimeoutQuoteExpiry     = 15 * time.Minute
+	TimeoutQuoteExpiry              = 15 * time.Minute
+	TimeoutShopifyOrderProcess      = 2 * time.Minute
+	TimeoutShopifyOrderCancel       = 30 * time.Second
+	TimeoutShopifyFulfillmentSync   = 30 * time.Second
+	TimeoutShopifyFulfillmentRetry  = 5 * time.Minute
 )
 
 // Task retry constants.
@@ -88,7 +98,11 @@ const (
 	MaxRetryReconciliation  = 3 // Reconciliation
 	MaxRetryProviderHealth  = 1 // Health checks shouldn't retry much
 	MaxRetryLabelGeneration = 3 // Label generation
-	MaxRetryQuoteExpiry     = 3 // Quote expiry cleanup
+	MaxRetryQuoteExpiry              = 3 // Quote expiry cleanup
+	MaxRetryShopifyOrderProcess      = 5 // Shopify order processing
+	MaxRetryShopifyOrderCancel       = 3 // Shopify order cancellation
+	MaxRetryShopifyFulfillmentSync   = 7 // Shopify fulfillment sync
+	MaxRetryShopifyFulfillmentRetry  = 3 // Shopify fulfillment retry batch
 )
 
 // WebhookDeliveryPayload is the payload for webhook delivery tasks.
@@ -524,6 +538,121 @@ func ParseWebhookDLQPayload(task *asynq.Task) (*WebhookDLQPayload, error) {
 	}
 	if payload.BatchSize == 0 {
 		payload.BatchSize = 100
+	}
+	return &payload, nil
+}
+
+// ShopifyOrderPayload is the payload for Shopify order processing tasks.
+type ShopifyOrderPayload struct {
+	ShopDomain string          `json:"shop_domain"`
+	OrderData  json.RawMessage `json:"order_data"`
+}
+
+// NewShopifyOrderProcessTask creates a new Shopify order processing task.
+func NewShopifyOrderProcessTask(shopDomain string, orderData []byte) (*asynq.Task, error) {
+	payload, err := json.Marshal(ShopifyOrderPayload{
+		ShopDomain: shopDomain,
+		OrderData:  orderData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeShopifyOrderProcess, payload,
+		asynq.MaxRetry(MaxRetryShopifyOrderProcess),
+		asynq.Timeout(TimeoutShopifyOrderProcess),
+		asynq.Queue(QueueDefault),
+	), nil
+}
+
+// NewShopifyOrderCancelTask creates a new Shopify order cancellation task.
+func NewShopifyOrderCancelTask(shopDomain string, orderData []byte) (*asynq.Task, error) {
+	payload, err := json.Marshal(ShopifyOrderPayload{
+		ShopDomain: shopDomain,
+		OrderData:  orderData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeShopifyOrderCancel, payload,
+		asynq.MaxRetry(MaxRetryShopifyOrderCancel),
+		asynq.Timeout(TimeoutShopifyOrderCancel),
+		asynq.Queue(QueueDefault),
+	), nil
+}
+
+// ParseShopifyOrderPayload parses the payload of a Shopify order task.
+func ParseShopifyOrderPayload(task *asynq.Task) (*ShopifyOrderPayload, error) {
+	var payload ShopifyOrderPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+// ShopifyFulfillmentSyncPayload is the payload for fulfillment sync tasks.
+type ShopifyFulfillmentSyncPayload struct {
+	MappingID       string `json:"mapping_id"`
+	TrackingNumber  string `json:"tracking_number"`
+	TrackingCompany string `json:"tracking_company"`
+	TrackingURL     string `json:"tracking_url,omitempty"`
+}
+
+// NewShopifyFulfillmentSyncTask creates a new fulfillment sync task.
+func NewShopifyFulfillmentSyncTask(mappingID, trackingNumber, trackingCompany, trackingURL string) (*asynq.Task, error) {
+	payload, err := json.Marshal(ShopifyFulfillmentSyncPayload{
+		MappingID:       mappingID,
+		TrackingNumber:  trackingNumber,
+		TrackingCompany: trackingCompany,
+		TrackingURL:     trackingURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeShopifyFulfillmentSync, payload,
+		asynq.MaxRetry(MaxRetryShopifyFulfillmentSync),
+		asynq.Timeout(TimeoutShopifyFulfillmentSync),
+		asynq.Queue(QueueDefault),
+	), nil
+}
+
+// ParseShopifyFulfillmentSyncPayload parses the payload of a fulfillment sync task.
+func ParseShopifyFulfillmentSyncPayload(task *asynq.Task) (*ShopifyFulfillmentSyncPayload, error) {
+	var payload ShopifyFulfillmentSyncPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+// ShopifyFulfillmentRetryPayload is the payload for fulfillment retry batch tasks.
+type ShopifyFulfillmentRetryPayload struct {
+	BatchSize int `json:"batch_size,omitempty"`
+}
+
+// NewShopifyFulfillmentRetryTask creates a new fulfillment retry batch task.
+func NewShopifyFulfillmentRetryTask(batchSize int) (*asynq.Task, error) {
+	payload, err := json.Marshal(ShopifyFulfillmentRetryPayload{BatchSize: batchSize})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeShopifyFulfillmentRetry, payload,
+		asynq.MaxRetry(MaxRetryShopifyFulfillmentRetry),
+		asynq.Timeout(TimeoutShopifyFulfillmentRetry),
+		asynq.Queue(QueueLow),
+	), nil
+}
+
+// ParseShopifyFulfillmentRetryPayload parses the payload of a fulfillment retry task.
+func ParseShopifyFulfillmentRetryPayload(task *asynq.Task) (*ShopifyFulfillmentRetryPayload, error) {
+	var payload ShopifyFulfillmentRetryPayload
+	if len(task.Payload()) == 0 {
+		return &ShopifyFulfillmentRetryPayload{BatchSize: 50}, nil
+	}
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return nil, err
+	}
+	if payload.BatchSize == 0 {
+		payload.BatchSize = 50
 	}
 	return &payload, nil
 }
