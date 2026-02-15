@@ -545,26 +545,15 @@ func configureRoutes(r *chi.Mux, cfg RouterConfig) {
 			}
 		})
 
-		// Label Settings routes (stub — feature not yet implemented)
+		// Label Settings routes
 		r.Route("/label-settings", func(r chi.Router) {
-			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"format":"pdf","size":"a6","include_logo":false,"logo_url":null}`))
-			})
-			r.Patch("/", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"format":"pdf","size":"a6","include_logo":false,"logo_url":null}`))
-			})
-			r.Post("/logo", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusNotImplemented)
-				w.Write([]byte(`{"type":"about:blank","title":"Not Implemented","status":501,"detail":"Label logo upload is not yet implemented"}`))
-			})
-			r.Delete("/logo", func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusNoContent)
-			})
+			if cfg.OrganizationService != nil {
+				lsh := handler.NewLabelSettingsHandler(cfg.OrganizationService, cfg.Logger)
+				r.Get("/", lsh.GetLabelSettings)
+				r.Patch("/", lsh.UpdateLabelSettings)
+				r.Post("/logo", lsh.UploadLogo)
+				r.Delete("/logo", lsh.DeleteLogo)
+			}
 		})
 
 		// Stats routes (dashboard statistics)

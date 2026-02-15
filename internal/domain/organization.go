@@ -40,6 +40,12 @@ func (s OrganizationStatus) String() string {
 type OrganizationSettings struct {
 	// DefaultLabelFormat is the preferred label format (pdf, zpl, png).
 	DefaultLabelFormat string `json:"default_label_format,omitempty"`
+	// DefaultLabelSize is the preferred label size (a6, a4, 10x15cm).
+	DefaultLabelSize string `json:"default_label_size,omitempty"`
+	// LabelIncludeLogo indicates if the company logo should appear on labels.
+	LabelIncludeLogo *bool `json:"label_include_logo,omitempty"`
+	// LabelLogoURL is the URL of the uploaded company logo for labels.
+	LabelLogoURL *string `json:"label_logo_url,omitempty"`
 	// DefaultCurrency is the preferred currency (default: TRY).
 	DefaultCurrency string `json:"default_currency,omitempty"`
 	// WebhookRetryEnabled indicates if webhook retries are enabled.
