@@ -64,10 +64,11 @@ INSERT INTO shipments (
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type CreateReturnShipmentParams struct {
@@ -133,6 +134,8 @@ func (q *Queries) CreateReturnShipment(ctx context.Context, arg CreateReturnShip
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -151,18 +154,21 @@ INSERT INTO shipments (
     parcel,
     cod_amount_kurus,
     declared_value_kurus,
+    cod_collection_type,
+    cod_installments,
     status,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 )
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type CreateShipmentParams struct {
@@ -178,6 +184,8 @@ type CreateShipmentParams struct {
 	Parcel             json.RawMessage `db:"parcel" json:"parcel"`
 	CodAmountKurus     *int32          `db:"cod_amount_kurus" json:"cod_amount_kurus"`
 	DeclaredValueKurus *int32          `db:"declared_value_kurus" json:"declared_value_kurus"`
+	CodCollectionType  *string         `db:"cod_collection_type" json:"cod_collection_type"`
+	CodInstallments    *int32          `db:"cod_installments" json:"cod_installments"`
 	Status             string          `db:"status" json:"status"`
 	Metadata           json.RawMessage `db:"metadata" json:"metadata"`
 }
@@ -196,6 +204,8 @@ func (q *Queries) CreateShipment(ctx context.Context, arg CreateShipmentParams) 
 		arg.Parcel,
 		arg.CodAmountKurus,
 		arg.DeclaredValueKurus,
+		arg.CodCollectionType,
+		arg.CodInstallments,
 		arg.Status,
 		arg.Metadata,
 	)
@@ -232,6 +242,8 @@ func (q *Queries) CreateShipment(ctx context.Context, arg CreateShipmentParams) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -241,10 +253,11 @@ const getShipmentByID = `-- name: GetShipmentByID :one
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE id = $1
 `
@@ -286,6 +299,8 @@ func (q *Queries) GetShipmentByID(ctx context.Context, id uuid.UUID) (*Shipment,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -294,10 +309,11 @@ const getShipmentByIdempotencyKey = `-- name: GetShipmentByIdempotencyKey :one
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE organization_id = $1 AND idempotency_key = $2
 `
@@ -342,6 +358,8 @@ func (q *Queries) GetShipmentByIdempotencyKey(ctx context.Context, arg GetShipme
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -350,10 +368,11 @@ const getShipmentByTrackingNumber = `-- name: GetShipmentByTrackingNumber :one
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE provider_code = $1 AND provider_tracking_number = $2
 `
@@ -398,6 +417,8 @@ func (q *Queries) GetShipmentByTrackingNumber(ctx context.Context, arg GetShipme
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -406,10 +427,11 @@ const getShipmentForUpdate = `-- name: GetShipmentForUpdate :one
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE id = $1
 FOR UPDATE
@@ -450,6 +472,8 @@ func (q *Queries) GetShipmentForUpdate(ctx context.Context, id uuid.UUID) (*Ship
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -504,11 +528,11 @@ func (q *Queries) ListActiveShipmentsByProvider(ctx context.Context, arg ListAct
 }
 
 const listCODShipmentsPendingSettlement = `-- name: ListCODShipmentsPendingSettlement :many
-SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number, 
+SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number,
        s.cod_amount_kurus, s.status, s.delivered_at
 FROM shipments s
 LEFT JOIN cod_settlements cs ON s.id = cs.shipment_id
-WHERE s.cod_amount_kurus IS NOT NULL 
+WHERE s.cod_amount_kurus IS NOT NULL
   AND s.cod_amount_kurus > 0
   AND s.status = 'delivered'
   AND cs.id IS NULL
@@ -556,10 +580,11 @@ const listShipmentsByDateRange = `-- name: ListShipmentsByDateRange :many
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE created_at >= $1 AND created_at < $2
 ORDER BY created_at DESC
@@ -611,6 +636,8 @@ func (q *Queries) ListShipmentsByDateRange(ctx context.Context, arg ListShipment
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CodCollectionType,
+			&i.CodInstallments,
 		); err != nil {
 			return nil, err
 		}
@@ -626,10 +653,11 @@ const listShipmentsByOrganization = `-- name: ListShipmentsByOrganization :many
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE organization_id = $1
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -700,6 +728,8 @@ func (q *Queries) ListShipmentsByOrganization(ctx context.Context, arg ListShipm
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CodCollectionType,
+			&i.CodInstallments,
 		); err != nil {
 			return nil, err
 		}
@@ -776,10 +806,11 @@ WHERE id = $1 AND status = 'draft'
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentAfterLabelPurchaseParams struct {
@@ -837,6 +868,8 @@ func (q *Queries) UpdateShipmentAfterLabelPurchase(ctx context.Context, arg Upda
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -852,10 +885,11 @@ WHERE id = $1 AND status IN ('draft', 'label_purchased', 'pickup_scheduled')
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentCancelledParams struct {
@@ -898,6 +932,8 @@ func (q *Queries) UpdateShipmentCancelled(ctx context.Context, arg UpdateShipmen
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -912,10 +948,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentDeliveredParams struct {
@@ -958,6 +995,8 @@ func (q *Queries) UpdateShipmentDelivered(ctx context.Context, arg UpdateShipmen
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -971,10 +1010,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentMetadataParams struct {
@@ -1017,6 +1057,8 @@ func (q *Queries) UpdateShipmentMetadata(ctx context.Context, arg UpdateShipment
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -1031,10 +1073,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentPickedUpParams struct {
@@ -1077,6 +1120,8 @@ func (q *Queries) UpdateShipmentPickedUp(ctx context.Context, arg UpdateShipment
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -1091,10 +1136,11 @@ WHERE id = $1 AND status = 'label_purchased'
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentPickupScheduledParams struct {
@@ -1137,6 +1183,8 @@ func (q *Queries) UpdateShipmentPickupScheduled(ctx context.Context, arg UpdateS
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -1150,10 +1198,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentReturnLinkParams struct {
@@ -1196,6 +1245,8 @@ func (q *Queries) UpdateShipmentReturnLink(ctx context.Context, arg UpdateShipme
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -1209,10 +1260,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at
+          created_at, updated_at, cod_collection_type, cod_installments
 `
 
 type UpdateShipmentStatusParams struct {
@@ -1255,6 +1307,8 @@ func (q *Queries) UpdateShipmentStatus(ctx context.Context, arg UpdateShipmentSt
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }

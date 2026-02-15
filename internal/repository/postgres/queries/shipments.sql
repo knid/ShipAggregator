@@ -5,10 +5,11 @@
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE id = $1;
 
@@ -16,10 +17,11 @@ WHERE id = $1;
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE organization_id = $1 AND idempotency_key = $2;
 
@@ -27,10 +29,11 @@ WHERE organization_id = $1 AND idempotency_key = $2;
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE provider_code = $1 AND provider_tracking_number = $2;
 
@@ -38,10 +41,11 @@ WHERE provider_code = $1 AND provider_tracking_number = $2;
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE id = $1
 FOR UPDATE;
@@ -50,10 +54,11 @@ FOR UPDATE;
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE organization_id = $1
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
@@ -87,18 +92,21 @@ INSERT INTO shipments (
     parcel,
     cod_amount_kurus,
     declared_value_kurus,
+    cod_collection_type,
+    cod_installments,
     status,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 )
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentAfterLabelPurchase :one
 UPDATE shipments
@@ -116,10 +124,11 @@ WHERE id = $1 AND status = 'draft'
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentStatus :one
 UPDATE shipments
@@ -130,10 +139,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentPickupScheduled :one
 UPDATE shipments
@@ -145,10 +155,11 @@ WHERE id = $1 AND status = 'label_purchased'
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentPickedUp :one
 UPDATE shipments
@@ -160,10 +171,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentDelivered :one
 UPDATE shipments
@@ -175,10 +187,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentCancelled :one
 UPDATE shipments
@@ -191,10 +204,11 @@ WHERE id = $1 AND status IN ('draft', 'label_purchased', 'pickup_scheduled')
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentReturnLink :one
 UPDATE shipments
@@ -205,10 +219,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: UpdateShipmentMetadata :one
 UPDATE shipments
@@ -219,10 +234,11 @@ WHERE id = $1
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: ListShipmentsForTrackingPoll :many
 SELECT id, organization_id, provider_code, provider_tracking_number, status
@@ -243,11 +259,11 @@ ORDER BY updated_at ASC
 LIMIT sqlc.arg('limit_count')::int;
 
 -- name: ListCODShipmentsPendingSettlement :many
-SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number, 
+SELECT s.id, s.organization_id, s.provider_code, s.provider_tracking_number,
        s.cod_amount_kurus, s.status, s.delivered_at
 FROM shipments s
 LEFT JOIN cod_settlements cs ON s.id = cs.shipment_id
-WHERE s.cod_amount_kurus IS NOT NULL 
+WHERE s.cod_amount_kurus IS NOT NULL
   AND s.cod_amount_kurus > 0
   AND s.status = 'delivered'
   AND cs.id IS NULL;
@@ -272,19 +288,21 @@ INSERT INTO shipments (
 RETURNING id, organization_id, idempotency_key, offer_id, provider_code, service_code,
           provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
           provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-          declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+          declared_value_kurus,
+          status, label_document_id, label_format, price_charged_kurus,
           cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
           cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-          created_at, updated_at;
+          created_at, updated_at, cod_collection_type, cod_installments;
 
 -- name: ListShipmentsByDateRange :many
 SELECT id, organization_id, idempotency_key, offer_id, provider_code, service_code,
        provider_account_id, is_marketplace, provider_shipment_id, provider_tracking_number,
        provider_barcode, origin_address, destination_address, parcel, cod_amount_kurus,
-       declared_value_kurus, status, label_document_id, label_format, price_charged_kurus,
+       declared_value_kurus,
+       status, label_document_id, label_format, price_charged_kurus,
        cost_kurus, pickup_scheduled_at, picked_up_at, delivered_at, cancelled_at,
        cancellation_reason, return_shipment_id, original_shipment_id, metadata,
-       created_at, updated_at
+       created_at, updated_at, cod_collection_type, cod_installments
 FROM shipments
 WHERE created_at >= $1 AND created_at < $2
 ORDER BY created_at DESC;

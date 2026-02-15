@@ -347,12 +347,27 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 		order.Description = *req.Parcel.Description
 	}
 
-	// Map COD
+	// Map COD (Kapida Odeme)
 	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 {
-		order.TtCollectionType = "0" // Cash
+		collType := "0" // Default: Cash
+		if req.CODCollectionType != nil && *req.CODCollectionType == "credit_card" {
+			collType = "1"
+		}
+		order.TtCollectionType = collType
 		order.TtInvoiceAmount = fmt.Sprintf("%.2f", float64(*req.CODAmountKurus)/100.0)
-		order.TtDocumentId = cargoKey
-		order.TtDocumentSaveType = "0" // Same invoice (required when ttCollectionType=0)
+		// ttDocumentId is Long(12) — must be purely numeric
+		order.TtDocumentId = fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000_000)
+		order.TtDocumentSaveType = "0"
+
+		// Credit card COD requires installment fields
+		if collType == "1" {
+			installments := 1
+			if req.CODInstallments != nil && *req.CODInstallments > 0 {
+				installments = int(*req.CODInstallments)
+			}
+			order.DcSelectedCredit = fmt.Sprintf("%d", installments)
+			order.DcCreditRule = "1"
+		}
 	}
 
 	soapReq := &CreateShipmentRequest{

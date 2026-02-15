@@ -98,6 +98,8 @@ type CreateQuoteRequest struct {
 	DestinationAddress *domain.Address
 	Parcel             *domain.Parcel
 	CODAmountKurus     *int32
+	CODCollectionType  *string
+	CODInstallments    *int32
 	DeclaredValueKurus *int32
 	UseBYOA            bool
 	ProviderAccountIDs []uuid.UUID
@@ -164,6 +166,8 @@ func (s *Service) CreateQuote(ctx context.Context, req *CreateQuoteRequest) (*Qu
 		Parcel:             parcelJSON,
 		CodAmountKurus:     req.CODAmountKurus,
 		DeclaredValueKurus: req.DeclaredValueKurus,
+		CodCollectionType:  req.CODCollectionType,
+		CodInstallments:    req.CODInstallments,
 		UseByoa:            req.UseBYOA,
 		ProviderAccountIds: providerAccountIDs,
 		Status:             "pending",
@@ -625,6 +629,8 @@ func (s *Service) RefreshQuote(ctx context.Context, quoteID uuid.UUID, orgID uui
 		DestinationAddress: &destAddress,
 		Parcel:             &parcel,
 		CODAmountKurus:     quote.CodAmountKurus,
+		CODCollectionType:  quote.CodCollectionType,
+		CODInstallments:    quote.CodInstallments,
 		DeclaredValueKurus: quote.DeclaredValueKurus,
 		UseBYOA:            quote.UseByoa,
 		ProviderAccountIDs: providerAccountIDs,

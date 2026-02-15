@@ -44,13 +44,15 @@ INSERT INTO quotes (
     use_byoa,
     provider_account_ids,
     status,
-    expires_at
+    expires_at,
+    cod_collection_type,
+    cod_installments
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 )
 RETURNING id, organization_id, idempotency_key, origin_address, destination_address,
           parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-          status, expires_at, created_at
+          status, expires_at, created_at, cod_collection_type, cod_installments
 `
 
 type CreateQuoteParams struct {
@@ -65,6 +67,8 @@ type CreateQuoteParams struct {
 	ProviderAccountIds []byte             `db:"provider_account_ids" json:"provider_account_ids"`
 	Status             string             `db:"status" json:"status"`
 	ExpiresAt          pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CodCollectionType  *string            `db:"cod_collection_type" json:"cod_collection_type"`
+	CodInstallments    *int32             `db:"cod_installments" json:"cod_installments"`
 }
 
 func (q *Queries) CreateQuote(ctx context.Context, arg CreateQuoteParams) (*Quote, error) {
@@ -80,6 +84,8 @@ func (q *Queries) CreateQuote(ctx context.Context, arg CreateQuoteParams) (*Quot
 		arg.ProviderAccountIds,
 		arg.Status,
 		arg.ExpiresAt,
+		arg.CodCollectionType,
+		arg.CodInstallments,
 	)
 	var i Quote
 	err := row.Scan(
@@ -96,6 +102,8 @@ func (q *Queries) CreateQuote(ctx context.Context, arg CreateQuoteParams) (*Quot
 		&i.Status,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -124,7 +132,7 @@ func (q *Queries) ExpireQuotes(ctx context.Context) error {
 const getActiveQuoteByID = `-- name: GetActiveQuoteByID :one
 SELECT id, organization_id, idempotency_key, origin_address, destination_address,
        parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-       status, expires_at, created_at
+       status, expires_at, created_at, cod_collection_type, cod_installments
 FROM quotes
 WHERE id = $1 AND status = 'completed' AND expires_at > NOW()
 `
@@ -146,6 +154,8 @@ func (q *Queries) GetActiveQuoteByID(ctx context.Context, id uuid.UUID) (*Quote,
 		&i.Status,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -154,7 +164,7 @@ const getQuoteByID = `-- name: GetQuoteByID :one
 
 SELECT id, organization_id, idempotency_key, origin_address, destination_address,
        parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-       status, expires_at, created_at
+       status, expires_at, created_at, cod_collection_type, cod_installments
 FROM quotes
 WHERE id = $1
 `
@@ -178,6 +188,8 @@ func (q *Queries) GetQuoteByID(ctx context.Context, id uuid.UUID) (*Quote, error
 		&i.Status,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -185,7 +197,7 @@ func (q *Queries) GetQuoteByID(ctx context.Context, id uuid.UUID) (*Quote, error
 const getQuoteByIdempotencyKey = `-- name: GetQuoteByIdempotencyKey :one
 SELECT id, organization_id, idempotency_key, origin_address, destination_address,
        parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-       status, expires_at, created_at
+       status, expires_at, created_at, cod_collection_type, cod_installments
 FROM quotes
 WHERE organization_id = $1 AND idempotency_key = $2
 `
@@ -212,6 +224,8 @@ func (q *Queries) GetQuoteByIdempotencyKey(ctx context.Context, arg GetQuoteById
 		&i.Status,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }
@@ -219,7 +233,7 @@ func (q *Queries) GetQuoteByIdempotencyKey(ctx context.Context, arg GetQuoteById
 const getQuoteWithOffers = `-- name: GetQuoteWithOffers :many
 SELECT q.id, q.organization_id, q.idempotency_key, q.origin_address, q.destination_address,
        q.parcel, q.cod_amount_kurus, q.declared_value_kurus, q.use_byoa, q.provider_account_ids,
-       q.status, q.expires_at, q.created_at,
+       q.status, q.expires_at, q.created_at, q.cod_collection_type, q.cod_installments,
        o.id as offer_id, o.provider_code, o.service_code, o.provider_account_id, o.is_marketplace,
        o.base_price_kurus, o.fuel_surcharge_kurus, o.cod_fee_kurus, o.insurance_fee_kurus,
        o.other_fees_kurus, o.subtotal_kurus, o.vat_kurus, o.total_price_kurus,
@@ -245,6 +259,8 @@ type GetQuoteWithOffersRow struct {
 	Status             string             `db:"status" json:"status"`
 	ExpiresAt          pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CodCollectionType  *string            `db:"cod_collection_type" json:"cod_collection_type"`
+	CodInstallments    *int32             `db:"cod_installments" json:"cod_installments"`
 	OfferID            pgtype.UUID        `db:"offer_id" json:"offer_id"`
 	ProviderCode       *string            `db:"provider_code" json:"provider_code"`
 	ServiceCode        *string            `db:"service_code" json:"service_code"`
@@ -289,6 +305,8 @@ func (q *Queries) GetQuoteWithOffers(ctx context.Context, id uuid.UUID) ([]*GetQ
 			&i.Status,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.CodCollectionType,
+			&i.CodInstallments,
 			&i.OfferID,
 			&i.ProviderCode,
 			&i.ServiceCode,
@@ -322,7 +340,7 @@ func (q *Queries) GetQuoteWithOffers(ctx context.Context, id uuid.UUID) ([]*GetQ
 const listQuotesByOrganization = `-- name: ListQuotesByOrganization :many
 SELECT id, organization_id, idempotency_key, origin_address, destination_address,
        parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-       status, expires_at, created_at
+       status, expires_at, created_at, cod_collection_type, cod_installments
 FROM quotes
 WHERE organization_id = $1
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -366,6 +384,8 @@ func (q *Queries) ListQuotesByOrganization(ctx context.Context, arg ListQuotesBy
 			&i.Status,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.CodCollectionType,
+			&i.CodInstallments,
 		); err != nil {
 			return nil, err
 		}
@@ -383,7 +403,7 @@ SET status = $2
 WHERE id = $1
 RETURNING id, organization_id, idempotency_key, origin_address, destination_address,
           parcel, cod_amount_kurus, declared_value_kurus, use_byoa, provider_account_ids,
-          status, expires_at, created_at
+          status, expires_at, created_at, cod_collection_type, cod_installments
 `
 
 type UpdateQuoteStatusParams struct {
@@ -408,6 +428,8 @@ func (q *Queries) UpdateQuoteStatus(ctx context.Context, arg UpdateQuoteStatusPa
 		&i.Status,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.CodCollectionType,
+		&i.CodInstallments,
 	)
 	return &i, err
 }

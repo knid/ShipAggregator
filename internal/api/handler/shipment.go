@@ -772,6 +772,8 @@ type ShipmentResponse struct {
 	DestinationAddress     json.RawMessage `json:"destination_address"`
 	Parcel                 json.RawMessage `json:"parcel"`
 	CODAmountKurus         *int32          `json:"cod_amount_kurus,omitempty"`
+	CODCollectionType      *string         `json:"cod_collection_type,omitempty"`
+	CODInstallments        *int32          `json:"cod_installments,omitempty"`
 	DeclaredValueKurus     *int32          `json:"declared_value_kurus,omitempty"`
 	Status                 string          `json:"status"`
 	LabelDocumentID        *uuid.UUID      `json:"label_document_id,omitempty"`
@@ -814,6 +816,8 @@ func shipmentToResponse(s *db.Shipment) ShipmentResponse {
 		DestinationAddress:     s.DestinationAddress,
 		Parcel:                 s.Parcel,
 		CODAmountKurus:         s.CodAmountKurus,
+		CODCollectionType:      s.CodCollectionType,
+		CODInstallments:        s.CodInstallments,
 		DeclaredValueKurus:     s.DeclaredValueKurus,
 		Status:                 s.Status,
 		LabelFormat:            s.LabelFormat,

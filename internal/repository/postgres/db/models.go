@@ -421,8 +421,10 @@ type Quote struct {
 	ProviderAccountIds []byte `db:"provider_account_ids" json:"provider_account_ids"`
 	Status             string `db:"status" json:"status"`
 	// Quote expiration timestamp (typically 30 minutes)
-	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ExpiresAt         pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	CodCollectionType *string            `db:"cod_collection_type" json:"cod_collection_type"`
+	CodInstallments   *int32             `db:"cod_installments" json:"cod_installments"`
 }
 
 // Turkish cities (provinces) reference data
@@ -563,6 +565,8 @@ type Shipment struct {
 	Metadata           json.RawMessage    `db:"metadata" json:"metadata"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	CodCollectionType  *string            `db:"cod_collection_type" json:"cod_collection_type"`
+	CodInstallments    *int32             `db:"cod_installments" json:"cod_installments"`
 }
 
 // Wallet funding requests

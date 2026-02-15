@@ -179,6 +179,10 @@ type QuoteRequest struct {
 	Parcel domain.Parcel `json:"parcel"`
 	// CODAmountKurus is the COD amount in kuruş (optional).
 	CODAmountKurus *int64 `json:"cod_amount_kurus,omitempty"`
+	// CODCollectionType is the COD collection type: "cash" or "credit_card" (optional).
+	CODCollectionType *string `json:"cod_collection_type,omitempty"`
+	// CODInstallments is the number of installments for credit card COD (optional).
+	CODInstallments *int32 `json:"cod_installments,omitempty"`
 	// DeclaredValueKurus is the declared value for insurance in kuruş (optional).
 	DeclaredValueKurus *int64 `json:"declared_value_kurus,omitempty"`
 	// ServiceCode is the specific service code to quote (optional).
@@ -249,6 +253,10 @@ type CreateShipmentRequest struct {
 	ServiceCode string `json:"service_code"`
 	// CODAmountKurus is the COD amount in kuruş (optional).
 	CODAmountKurus *int64 `json:"cod_amount_kurus,omitempty"`
+	// CODCollectionType is the COD collection type: "cash" or "credit_card" (optional).
+	CODCollectionType *string `json:"cod_collection_type,omitempty"`
+	// CODInstallments is the number of installments for credit card COD (optional).
+	CODInstallments *int32 `json:"cod_installments,omitempty"`
 	// DeclaredValueKurus is the declared value for insurance in kuruş (optional).
 	DeclaredValueKurus *int64 `json:"declared_value_kurus,omitempty"`
 	// Reference is the customer reference number (optional).
