@@ -281,11 +281,14 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		if err != nil {
 			return fmt.Errorf("failed to parse provider health check payload: %w", err)
 		}
-		deps.logger.Info("processing provider health check",
+		deps.logger.Warn("provider health check not implemented — skipping",
 			"provider_code", payload.ProviderCode,
 		)
 		// TODO: Implement provider health check logic
-		return nil
+		// - Ping provider API with test credentials
+		// - Record success/failure metrics
+		// - Update provider health status in DB
+		return fmt.Errorf("not implemented: provider health check for %s", payload.ProviderCode)
 	})
 
 	// Register API key expiry notification handler (placeholder)
@@ -294,11 +297,13 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		if err != nil {
 			return fmt.Errorf("failed to parse API key expiry notification payload: %w", err)
 		}
-		deps.logger.Info("processing API key expiry notification",
+		deps.logger.Warn("API key expiry notification not implemented — skipping",
 			"days_before_expiry", payload.DaysBeforeExpiry,
 		)
 		// TODO: Implement API key expiry notification logic
-		return nil
+		// - Query API keys expiring within N days
+		// - Send notification emails to organization admins
+		return fmt.Errorf("not implemented: API key expiry notification (days=%d)", payload.DaysBeforeExpiry)
 	})
 
 	// Register label generation handler (placeholder)
@@ -307,11 +312,15 @@ func registerTaskHandlers(mux *asynq.ServeMux, deps *taskHandlerDeps) {
 		if err != nil {
 			return fmt.Errorf("failed to parse label generation payload: %w", err)
 		}
-		deps.logger.Info("processing label generation",
+		deps.logger.Warn("label generation not implemented — skipping",
 			"shipment_id", payload.ShipmentID,
 		)
 		// TODO: Implement label generation logic
-		return nil
+		// - Fetch shipment details from DB
+		// - Call provider adapter to generate label
+		// - Store label document in object storage
+		// - Update shipment with label_document_id
+		return fmt.Errorf("not implemented: label generation for shipment %s", payload.ShipmentID)
 	})
 
 	// Register outbox cleanup handler (internal task)

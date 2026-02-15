@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"math"
 	"strconv"
@@ -232,19 +233,22 @@ func getStr(row map[string]any, key string) string {
 }
 
 // buildLoginInfoXML builds the LoginInfo XML string for SOAP requests.
+// Values are XML-escaped to prevent injection attacks.
 func buildLoginInfoXML(creds *Credentials) string {
 	return fmt.Sprintf(
 		"<LoginInfo><UserName>%s</UserName><Password>%s</Password><CustomerCode>%s</CustomerCode></LoginInfo>",
-		creds.Username, creds.Password, creds.CustomerCode,
+		html.EscapeString(creds.Username), html.EscapeString(creds.Password), html.EscapeString(creds.CustomerCode),
 	)
 }
 
 // buildQueryInfoXML builds the QueryInfo XML string for SOAP requests.
+// Keys and values are XML-escaped to prevent injection attacks.
 func buildQueryInfoXML(queryType int, params map[string]string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("<QueryInfo><QueryType>%d</QueryType>", queryType))
 	for k, v := range params {
-		sb.WriteString(fmt.Sprintf("<%s>%s</%s>", k, v, k))
+		ek := html.EscapeString(k)
+		sb.WriteString(fmt.Sprintf("<%s>%s</%s>", ek, html.EscapeString(v), ek))
 	}
 	sb.WriteString("</QueryInfo>")
 	return sb.String()

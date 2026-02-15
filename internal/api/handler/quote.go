@@ -113,6 +113,17 @@ func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Warn if origin and destination appear identical
+	if req.OriginAddress != nil && req.DestinationAddress != nil &&
+		req.OriginAddress.CityCode == req.DestinationAddress.CityCode &&
+		req.OriginAddress.DistrictCode == req.DestinationAddress.DistrictCode &&
+		req.OriginAddress.StreetLine1 == req.DestinationAddress.StreetLine1 {
+		h.logger.Warn("Quote origin and destination appear identical",
+			"city_code", req.OriginAddress.CityCode,
+			"district_code", req.OriginAddress.DistrictCode,
+		)
+	}
+
 	// Convert to domain types
 	originAddress := &domain.Address{
 		ContactName:      req.OriginAddress.ContactName,

@@ -3,6 +3,8 @@ package shipment
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -354,7 +356,9 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 		createReq.Credentials = credentials
 
 		// Record account usage
-		_ = s.accountService.RecordUsage(ctx, account.ID)
+		if err := s.accountService.RecordUsage(ctx, account.ID); err != nil {
+			s.logger.Warn("Failed to record provider account usage", "account_id", account.ID, "error", err)
+		}
 	}
 
 	// Create shipment with provider
@@ -383,7 +387,7 @@ func (s *Service) PurchaseLabel(ctx context.Context, req *PurchaseLabelRequest) 
 			StorageBucket:  "documents",
 			ContentType:    createResp.Label.ContentType,
 			SizeBytes:      int32(len(createResp.Label.Content)),
-			ContentHash:    "", // TODO: Calculate hash
+			ContentHash:    contentHash(createResp.Label.Content),
 			Metadata:       []byte("{}"),
 		})
 		if err != nil {
@@ -1014,7 +1018,9 @@ func (s *Service) PurchaseReturnLabel(ctx context.Context, req *PurchaseLabelReq
 		}
 
 		createReturnReq.Credentials = credentials
-		_ = s.accountService.RecordUsage(ctx, account.ID)
+		if err := s.accountService.RecordUsage(ctx, account.ID); err != nil {
+			s.logger.Warn("Failed to record provider account usage", "account_id", account.ID, "error", err)
+		}
 	}
 
 	// Create return shipment with provider
@@ -1245,7 +1251,9 @@ func (s *Service) SchedulePickup(ctx context.Context, req *SchedulePickupRequest
 		}
 
 		pickupReq.Credentials = credentials
-		_ = s.accountService.RecordUsage(ctx, account.ID)
+		if err := s.accountService.RecordUsage(ctx, account.ID); err != nil {
+			s.logger.Warn("Failed to record provider account usage", "account_id", account.ID, "error", err)
+		}
 	}
 
 	// Schedule pickup with provider
@@ -1284,4 +1292,10 @@ func (s *Service) SchedulePickup(ctx context.Context, req *SchedulePickupRequest
 		TimeWindowStart: pickupResp.TimeWindowStart,
 		TimeWindowEnd:   pickupResp.TimeWindowEnd,
 	}, nil
+}
+
+// contentHash returns a SHA-256 hex digest of the given content.
+func contentHash(content []byte) string {
+	h := sha256.Sum256(content)
+	return hex.EncodeToString(h[:])
 }

@@ -289,6 +289,9 @@ func Load() (*Config, error) {
 		}
 	}
 	cfg.Security.JWTSecret = os.Getenv("JWT_SECRET")
+	if cfg.Security.JWTSecret == "" || cfg.Security.JWTSecret == "your-jwt-secret-key-change-in-production" {
+		fmt.Fprintln(os.Stderr, "WARNING: JWT_SECRET is not set or is using the default value. This is insecure for any non-local environment!")
+	}
 	cfg.Security.APIKeyPrefix = getEnvOrDefault("API_KEY_PREFIX", "sk_live_")
 
 	// Rate limit config
