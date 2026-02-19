@@ -176,6 +176,36 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 		return nil, fmt.Errorf("%w: payment provider not configured", ErrPaymentInitFailed)
 	}
 
+	// Fill missing org details from database
+	orgEmail := req.OrgEmail
+	orgName := req.OrgName
+	if orgEmail == "" || orgName == "" {
+		org, err := s.queries.GetOrganizationByID(ctx, req.OrganizationID)
+		if err == nil {
+			if orgEmail == "" {
+				orgEmail = org.BillingEmail
+			}
+			if orgName == "" {
+				orgName = org.Name
+			}
+		}
+	}
+	// PayTR requires non-empty values
+	if orgEmail == "" {
+		orgEmail = "billing@kargonet.com"
+	}
+	if orgName == "" {
+		orgName = "Kullanici"
+	}
+	orgAddress := req.OrgAddress
+	if orgAddress == "" {
+		orgAddress = "Turkiye"
+	}
+	orgPhone := req.OrgPhone
+	if orgPhone == "" {
+		orgPhone = "05000000000"
+	}
+
 	// Build PayTR basket
 	priceStr := fmt.Sprintf("%.2f", float64(req.AmountKurus)/100.0)
 	basket := paytr.NewWalletTopupBasket("Cüzdan Yükleme", priceStr)
@@ -183,12 +213,12 @@ func (s *TopupService) Create(ctx context.Context, req *CreateTopupRequest) (*Cr
 	// Request PayTR iframe token
 	paytrReq := &paytr.GetTokenRequest{
 		MerchantOID:   dbTopup.ID.String(),
-		Email:         req.OrgEmail,
+		Email:         orgEmail,
 		PaymentAmount: int(req.AmountKurus),
 		UserIP:        req.ClientIP,
-		UserName:      req.OrgName,
-		UserAddress:   req.OrgAddress,
-		UserPhone:     req.OrgPhone,
+		UserName:      orgName,
+		UserAddress:   orgAddress,
+		UserPhone:     orgPhone,
 		UserBasket:    basket,
 		Currency:      "TL",
 		NoInstallment: 1,

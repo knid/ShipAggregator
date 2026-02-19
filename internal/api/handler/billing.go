@@ -4,6 +4,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -1151,10 +1152,13 @@ func (h *BillingHandler) CreateTopup(w http.ResponseWriter, r *http.Request) {
 		idempotencyKey = uuid.New().String()
 	}
 
-	// Get client IP
+	// Get client IP (strip port from RemoteAddr)
 	clientIP := r.RemoteAddr
 	if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
 		clientIP = forwardedFor
+	}
+	if host, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = host
 	}
 
 	// Create topup

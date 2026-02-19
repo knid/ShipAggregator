@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/knid/kargonet/internal/domain"
+	"github.com/knid/kargonet/internal/label"
 	"github.com/knid/kargonet/internal/provider"
 	"github.com/knid/kargonet/internal/provider/soap"
 )
@@ -555,10 +556,47 @@ func (a *Adapter) CreateShipment(ctx context.Context, req provider.CreateShipmen
 		return nil, err
 	}
 
-	return &provider.CreateShipmentResponse{
+	// Generate Aras-format label
+	pieceBarcodeNumber := result.IntegrationCode + "01"
+	labelParams := label.ArasLabelParams{
+		SenderName:         req.Origin.ContactName,
+		ReceiverName:       receiverName,
+		ServiceType:        "Standart Kargo",
+		IntegrationCode:    result.IntegrationCode,
+		PieceBarcodeNumber: pieceBarcodeNumber,
+		PieceIndex:         1,
+		PieceTotal:         1,
+		Date:               time.Now(),
+	}
+	if req.CODAmountKurus != nil && *req.CODAmountKurus > 0 {
+		collType := "Nakit"
+		if req.CODCollectionType != nil && *req.CODCollectionType == "credit_card" {
+			collType = "Kredi Kartı"
+		}
+		labelParams.ServiceType = fmt.Sprintf("Tahsilatlı Kargo / %s", collType)
+		labelParams.CODAmountTL = fmt.Sprintf("%.2f", float64(*req.CODAmountKurus)/100.0)
+	}
+
+	createResp := &provider.CreateShipmentResponse{
 		ProviderShipmentID: result.IntegrationCode,
 		TrackingNumber:     result.TrackingNumber,
-	}, nil
+	}
+
+	pdfBytes, err := label.GenerateArasLabel(labelParams)
+	if err != nil {
+		a.logger.Warn("failed to generate Aras label, shipment created without label",
+			slog.String("integration_code", result.IntegrationCode),
+			slog.String("error", err.Error()),
+		)
+	} else {
+		createResp.Label = &provider.LabelData{
+			Format:      domain.LabelFormatPDF,
+			Content:     pdfBytes,
+			ContentType: "application/pdf",
+		}
+	}
+
+	return createResp, nil
 }
 
 // buildArasAddressString builds a full address string from an AddressSnapshot.
